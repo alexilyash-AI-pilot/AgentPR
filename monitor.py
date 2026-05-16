@@ -95,20 +95,9 @@ def _is_eu_relevant(article: dict) -> bool:
         if us_domain in domain:
             return False
 
-    # Domains that are inherently EU-focused — always pass
-    eu_specific = (
-        ".eu", "sifted", "euronews", "euractiv", "eu-startups",
-        "tech.eu", "maddyness", "siliconcanals", "therecursive",
-        "netokracija", "bebeez", "startupreporter", "dispatcheseurope",
-        "vestbee", "itkey", "cybernews", "techfundingnews", "startuprise",
-    )
-    for marker in eu_specific:
-        if marker in domain:
-            return True
-
-    # For remaining domains, require at least one EU signal in the title
-    title_lower = f" {article.get('title', '').lower()} "
-    return any(signal in title_lower for signal in EU_SIGNALS)
+    # Google News RSS is already geo-targeted to GB/EU (gl=GB),
+    # so anything that isn't from a US-only domain is considered EU-relevant.
+    return True
 
 
 def _is_english_title(title: str) -> bool:

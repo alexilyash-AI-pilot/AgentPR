@@ -65,14 +65,13 @@ def _domain_from_url(url: str) -> str:
 
 
 def _is_eu_relevant(domain: str, title: str) -> bool:
+    # Reject known US-only media outright
     for us in US_ONLY_DOMAINS:
         if us in domain:
             return False
-    for marker in EU_SPECIFIC_MARKERS:
-        if marker in domain:
-            return True
-    title_lower = f" {title.lower()} "
-    return any(signal in title_lower for signal in EU_SIGNALS)
+    # Google News RSS is already geo-targeted to GB/EU (gl=GB),
+    # so anything that isn't from a US-only domain is considered EU-relevant.
+    return True
 
 
 def _is_english(title: str) -> bool:
