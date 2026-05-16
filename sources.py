@@ -45,23 +45,17 @@ KEYWORD_GROUPS = {
 ALL_QUERIES = [q for group in KEYWORD_GROUPS.values() for q in group]
 
 # ---------------------------------------------------------------------------
-# Tier 1 — Major international media (used with NewsAPI domains filter)
+# Tier 1 — European & international English-language media
+# (US-only outlets removed; remaining ones cover European topics in English)
 # ---------------------------------------------------------------------------
 
 TIER1_DOMAINS = [
-    "techcrunch.com",
     "pathfounders.com",
     "sifted.eu",
     "euronews.com",
     "ft.com",
-    "washingtonpost.com",
-    "nytimes.com",
-    "forbes.com",
     "theguardian.com",
     "bloomberg.com",
-    "wsj.com",
-    "businessinsider.com",
-    "fastcompany.com",
     "euractiv.com",
     "thetimes.co.uk",
     "wired.com",
@@ -69,15 +63,26 @@ TIER1_DOMAINS = [
     "reuters.com",
     "economist.com",
     "theobserver.co.uk",
-    "theverge.com",
     "politico.com",
-    "newsweek.com",
-    "cnbc.com",
     "cybernews.com",
-    "fortune.com",
+]
+
+# Domains known to publish US-centric content — excluded from all results
+US_ONLY_DOMAINS = {
+    "techcrunch.com",
+    "washingtonpost.com",
+    "nytimes.com",
+    "wsj.com",
     "axios.com",
     "morningbrew.com",
-]
+    "cnbc.com",
+    "newsweek.com",
+    "businessinsider.com",
+    "fastcompany.com",
+    "fortune.com",
+    "theverge.com",
+    "forbes.com",
+}
 
 # ---------------------------------------------------------------------------
 # Tier 2 — European startup / tech portals
@@ -168,6 +173,29 @@ DOMAIN_COUNTRY_MAP = {
     "startuprise.co.uk": "UK",
     "cybernews.com": "Lithuania",
     "itlogs.com": "International",
+}
+
+# ---------------------------------------------------------------------------
+# EU relevance signals — article title/text must contain at least one
+# of these to pass the EU relevance filter for non-EU-specific domains
+# ---------------------------------------------------------------------------
+
+EU_SIGNALS = {
+    # Continent / bloc
+    "europe", "european", " eu ", "euro",
+    # Countries
+    "uk", "united kingdom", "france", "germany", "spain", "italy",
+    "netherlands", "poland", "czech", "slovakia", "hungary", "romania",
+    "bulgaria", "croatia", "sweden", "denmark", "norway", "finland",
+    "belgium", "austria", "switzerland", "portugal", "ireland", "greece",
+    "latvia", "lithuania", "estonia", "slovenia", "serbia", "ukraine",
+    # Cities
+    "london", "paris", "berlin", "amsterdam", "madrid", "rome", "warsaw",
+    "prague", "budapest", "bucharest", "stockholm", "copenhagen", "dublin",
+    "brussels", "vienna", "zurich", "lisbon", "milan", "barcelona",
+    # Tracked companies (always EU-relevant by definition)
+    "deliverect", "restimo", "restaumatic", "upmenu", "sunday.app",
+    "choice restaurant", "choice crm", "choice.app",
 }
 
 # Cutoff date — only articles published after this date are processed

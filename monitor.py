@@ -30,10 +30,12 @@ from sources import (
     ALL_QUERIES,
     CUTOFF_DATE,
     DOMAIN_COUNTRY_MAP,
+    EU_SIGNALS,
     RSS_PATHS,
     TIER1_DOMAINS,
     TIER2_DOMAINS,
     TIER3_DOMAINS,
+    US_ONLY_DOMAINS,
     KEYWORD_GROUPS,
 )
 from telegram_bot import send_article, send_summary
@@ -75,9 +77,49 @@ def _parse_date(date_str: Optional[str]) -> Optional[datetime]:
 def _is_after_cutoff(date_str: Optional[str]) -> bool:
     dt = _parse_date(date_str)
     if dt is None:
-        # If we can't parse the date, include it (better to over-report)
-        return True
+        # Unknown date — exclude to avoid surfacing old articles
+        return False
     return dt >= CUTOFF_DT
+
+
+def _is_eu_relevant(article: dict) -> bool:
+    """
+    Returns True if the article is relevant to the EU/European market.
+    Hard-blocks known US-only domains. For international domains, requires
+    at least one EU signal in the title.
+    """
+    domain = article.get("_domain", "")
+
+    # Hard-block US-only outlets
+    for us_domain in US_ONLY_DOMAINS:
+        if us_domain in domain:
+            return False
+
+    # Domains that are inherently EU-focused — always pass
+    eu_specific = (
+        ".eu", "sifted", "euronews", "euractiv", "eu-startups",
+        "tech.eu", "maddyness", "siliconcanals", "therecursive",
+        "netokracija", "bebeez", "startupreporter", "dispatcheseurope",
+        "vestbee", "itkey", "cybernews", "techfundingnews", "startuprise",
+    )
+    for marker in eu_specific:
+        if marker in domain:
+            return True
+
+    # For remaining domains, require at least one EU signal in the title
+    title_lower = f" {article.get('title', '').lower()} "
+    return any(signal in title_lower for signal in EU_SIGNALS)
+
+
+def _is_english_title(title: str) -> bool:
+    """
+    Returns False if the title contains non-Latin script characters
+    (Cyrillic, Arabic, CJK, etc.) indicating a non-English article.
+    """
+    if not title:
+        return False
+    non_latin = sum(1 for c in title if ord(c) > 0x024F)
+    return non_latin / max(len(title), 1) < 0.2
 
 
 def _domain_from_url(url: str) -> str:
@@ -224,9 +266,10 @@ def _build_article(entry: dict, query: str = "") -> dict:
 # ---------------------------------------------------------------------------
 
 def fetch_google_news_rss(queries: list[str]) -> list[dict]:
-    """Fetch articles from Google News RSS for each query."""
+    """Fetch articles from Google News RSS for each query, using EU geo."""
     results = []
-    base = "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
+    # Use UK geo (English + European coverage) instead of US
+    base = "https://news.google.com/rss/search?q={query}&hl=en-GB&gl=GB&ceid=GB:en"
 
     for query in queries:
         url = base.format(query=quote_plus(query))
@@ -414,7 +457,7 @@ def run():
 
     logger.info("Total raw candidates before filtering: %d", len(raw))
 
-    # Step 3: deduplicate and filter by date
+    # Step 3: deduplicate, filter by date, EU relevance, and English language
     seen_in_run: set[str] = set()
     new_articles: list[dict] = []
 
@@ -425,11 +468,18 @@ def run():
         if url in seen_urls or url in seen_in_run:
             continue
         if not _is_after_cutoff(article.get("published_date")):
+            logger.debug("Skipped (old date): %s", article.get("title", "")[:60])
+            continue
+        if not _is_eu_relevant(article):
+            logger.debug("Skipped (not EU): %s | %s", article.get("_domain", ""), article.get("title", "")[:60])
+            continue
+        if not _is_english_title(article.get("title", "")):
+            logger.debug("Skipped (non-English): %s", article.get("title", "")[:60])
             continue
         seen_in_run.add(url)
         new_articles.append(article)
 
-    logger.info("New articles after dedup + date filter: %d", len(new_articles))
+    logger.info("New articles after dedup + date + EU + language filter: %d", len(new_articles))
 
     # Step 4: enrich missing authors via page scraping
     new_articles = enrich_authors(new_articles)
