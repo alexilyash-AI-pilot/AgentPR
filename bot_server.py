@@ -1,13 +1,13 @@
 """
-AgentPR Bot Server — FastAPI webhook powered by Anthropic Claude.
+AgentPR Bot Server — FastAPI webhook powered by OpenAI GPT-4o-mini.
 
-Every Telegram message → POST /webhook → Claude decides tool to call →
+Every Telegram message → POST /webhook → GPT decides tool to call →
 search_articles / send_to_group / create_sheet_tab.
 
 Group behaviour: only responds when @ChoicePRbot is mentioned or user
 replies directly to the bot's message.
 
-Confirm-before-send: after searching, Claude always asks "Send here or
+Confirm-before-send: after searching, GPT always asks "Send here or
 Google Sheet?" before posting or saving anything.
 """
 
@@ -15,11 +15,11 @@ import json
 import logging
 import os
 
-import anthropic
+import openai
 import requests
 from fastapi import BackgroundTasks, FastAPI, Request
 
-from tools import TOOL_SCHEMAS, create_sheet_tab, search_articles, send_articles_to_group
+from tools import create_sheet_tab, search_articles, send_articles_to_group
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -53,6 +53,59 @@ SYSTEM_PROMPT = (
     "7. If search returns 0 results → tell the user; no need to ask where to send.\n"
     "8. Be concise and professional."
 )
+
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_articles",
+            "description": (
+                "Search for EU/European news articles in English on a given topic. "
+                "Use this whenever the user asks to find, search, or show articles. "
+                "After the search, show a numbered summary and ALWAYS ask where to send them."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search topic, e.g. 'Deliverect funding Europe', 'AI restaurants'",
+                    },
+                    "days": {
+                        "type": "integer",
+                        "description": "How many days back to search. Default 90.",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_to_group",
+            "description": (
+                "Post the previously found articles as Telegram messages in this group. "
+                "Only call this after the user explicitly chose option 1 or said "
+                "'here', 'group', 'send here', 'post here', or '1'."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_sheet_tab",
+            "description": (
+                "Save the previously found articles to a new tab in the AgentPR Articles "
+                "Google Sheet and return the link. "
+                "Only call this after the user explicitly chose option 2 or said "
+                "'sheet', 'google sheet', 'spreadsheet', or '2'."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+]
 
 # ---------------------------------------------------------------------------
 # App
@@ -104,7 +157,6 @@ def _handle_update(data: dict) -> None:
 
     logger.info("[%s] %s", chat_id, text[:100])
 
-    # Append to conversation history
     history = CONVERSATIONS.get(chat_id, [])
     history.append({"role": "user", "content": text})
     if len(history) > MAX_HISTORY:
@@ -115,59 +167,73 @@ def _handle_update(data: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Claude agentic loop
+# OpenAI agentic loop
 # ---------------------------------------------------------------------------
 
 def _run_agent(history: list, chat_id: str) -> None:
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = os.environ.get("OPENAI_API_KEY", "")
     if not api_key:
-        _send(chat_id, "⚠️ ANTHROPIC_API_KEY is not configured.")
+        _send(chat_id, "⚠️ OPENAI_API_KEY is not configured.")
         return
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = openai.OpenAI(api_key=api_key)
 
     for round_num in range(6):
         try:
-            response = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=1024,
-                system=SYSTEM_PROMPT,
-                messages=history,
-                tools=TOOL_SCHEMAS,
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "system", "content": SYSTEM_PROMPT}] + history,
+                tools=TOOLS,
+                tool_choice="auto",
             )
-        except anthropic.APIError as exc:
-            logger.error("Anthropic error: %s", exc)
+        except openai.OpenAIError as exc:
+            logger.error("OpenAI error: %s", exc)
             _send(chat_id, "⚠️ AI service error. Please try again.")
             return
 
-        logger.info("Round %d: stop_reason=%s", round_num, response.stop_reason)
+        msg = response.choices[0].message
+        finish_reason = response.choices[0].finish_reason
+        logger.info("Round %d: finish_reason=%s", round_num, finish_reason)
 
-        if response.stop_reason == "end_turn":
-            for block in response.content:
-                if hasattr(block, "text") and block.text:
-                    _send(chat_id, block.text)
+        if finish_reason == "stop":
+            reply = msg.content or ""
+            if reply:
+                _send(chat_id, reply)
+            history.append({"role": "assistant", "content": reply})
             return
 
-        if response.stop_reason == "tool_use":
+        if finish_reason == "tool_calls":
+            # Add assistant message with tool_calls to history
             history.append({
                 "role": "assistant",
-                "content": _blocks_to_dicts(response.content),
+                "content": msg.content,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                    }
+                    for tc in (msg.tool_calls or [])
+                ],
             })
-            tool_results = []
-            for block in response.content:
-                if block.type != "tool_use":
-                    continue
-                result = _execute_tool(block.name, block.input, chat_id)
-                logger.info("Tool '%s' result: %s", block.name, str(result)[:120])
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
+
+            for tc in (msg.tool_calls or []):
+                try:
+                    inputs = json.loads(tc.function.arguments)
+                except json.JSONDecodeError:
+                    inputs = {}
+
+                result = _execute_tool(tc.function.name, inputs, chat_id)
+                logger.info("Tool '%s' result: %s", tc.function.name, str(result)[:120])
+
+                history.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
                     "content": result if isinstance(result, str) else json.dumps(result),
                 })
-            history.append({"role": "user", "content": tool_results})
             continue
 
-        logger.warning("Unexpected stop_reason: %s", response.stop_reason)
+        logger.warning("Unexpected finish_reason: %s", finish_reason)
         break
 
     _send(chat_id, "Processing limit reached. Please try again.")
@@ -205,16 +271,6 @@ def _execute_tool(name: str, inputs: dict, chat_id: str) -> str:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _blocks_to_dicts(blocks) -> list[dict]:
-    result = []
-    for b in blocks:
-        if b.type == "text":
-            result.append({"type": "text", "text": b.text})
-        elif b.type == "tool_use":
-            result.append({"type": "tool_use", "id": b.id, "name": b.name, "input": b.input})
-    return result
-
-
 def _send(chat_id: str, text: str) -> None:
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     if not token:
@@ -229,7 +285,6 @@ def _send(chat_id: str, text: str) -> None:
                 timeout=10,
             )
             if not r.json().get("ok"):
-                # Fallback without parse_mode if HTML caused issues
                 requests.post(api,
                     json={"chat_id": chat_id, "text": chunk, "disable_web_page_preview": True},
                     timeout=10)
