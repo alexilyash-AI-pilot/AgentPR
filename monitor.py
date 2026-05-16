@@ -186,6 +186,96 @@ _BUSINESS_SIGNALS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Relevance scoring
+# ---------------------------------------------------------------------------
+
+# Business-signal words for relevance scoring (broad — covers all valuable events)
+_RELEVANCE_BUSINESS_SIGNALS = [
+    "funding", "raises", "raised", "investment", "investors",
+    "series a", "series b", "series c", "seed", "round",
+    "acquisition", "acquires", "merger",
+    "partner", "partnership", "integration", "integrates",
+    "launch", "launches", "announced", "expands", "expansion",
+    "enterprise", "contract", "deal",
+    "hire", "appoints", "ceo", "cto", "coo", "vp",
+    "valuation", "ipo", "revenue", "growth", "milestone",
+]
+
+# Food/menu/dining noise phrases — presence in title kills relevance
+_FOOD_NOISE_PHRASES = [
+    "set menu", "seasonal menu", "cooking class", "restaurant week",
+    "best deals", "valentine", "christmas menu", "new menu", "tasting menu",
+    "prix fixe", "happy hour", "brunch", "chef's table", "michelin",
+    "best restaurants", "top restaurants", "where to eat", "places to eat",
+    "dining guide",
+]
+
+# US geographic signals that flag US-only content
+_US_GEO_TITLE_SIGNALS = [
+    "chicago", "california", "los angeles", "san francisco", "new york city",
+]
+
+# Flat list of all tracked company keywords for fast title-only lookup
+_COMPANY_TITLE_KEYWORDS: list[str] = []  # populated after _COMPANY_KEYWORDS is defined
+
+
+def _relevance_score(article: dict) -> int:
+    """
+    Score an article 0-100 for relevance.
+    Returns 0 for articles that should be rejected.
+
+    Scoring:
+      +40  title or description contains a business signal
+      +30  a tracked company keyword appears in the title
+      +20  domain is TIER1
+      +10  domain is TIER2
+      -50  title contains food/menu/dining noise
+      -30  US city in title AND no tracked company in title
+      -20  title references a restaurant venue (not a tech company)
+    Threshold: score < 20 → reject.
+    """
+    title = article.get("title", "").lower()
+    description = article.get("description", "").lower()
+    combined = f"{title} {description}"
+    domain = article.get("_domain", "")
+
+    score = 0
+
+    # +40: business-signal word in title or description
+    if any(sig in combined for sig in _RELEVANCE_BUSINESS_SIGNALS):
+        score += 40
+
+    # +30: tracked company keyword in the title specifically
+    company_in_title = any(kw in title for kw in _COMPANY_TITLE_KEYWORDS)
+    if company_in_title:
+        score += 30
+
+    # +20 / +10: domain authority tier
+    if any(d in domain for d in TIER1_DOMAINS):
+        score += 20
+    elif any(d in domain for d in TIER2_DOMAINS):
+        score += 10
+
+    # -50: food/menu/dining noise in title
+    if any(phrase in title for phrase in _FOOD_NOISE_PHRASES):
+        score -= 50
+
+    # -30: strong US-only geography with no tracked company in title
+    if any(geo in title for geo in _US_GEO_TITLE_SIGNALS) and not company_in_title:
+        score -= 30
+
+    # -20: title mentions a restaurant venue (not a tech platform) without
+    #      a tracked company or business-signal word in the title itself
+    if re.search(r"\b(restaurant|cafe|bistro|eatery|diner|brasserie)\b", title):
+        if not company_in_title and not any(
+            sig in title for sig in _RELEVANCE_BUSINESS_SIGNALS
+        ):
+            score -= 20
+
+    return max(score, 0)
+
+
 def _is_about_company(article: dict) -> bool:
     """
     Return False when the article is a listicle, restaurant directory, or
@@ -277,6 +367,11 @@ _COMPANY_KEYWORDS = {
     "ChoiceQR": ["choiceqr", "choice.app", "choice restaurant", "choice crm",
                  "choice qr", "choice raises", "choice funding", "choice platform"],
 }
+
+# Populate the flat keyword list used by _relevance_score() for title-only matching
+_COMPANY_TITLE_KEYWORDS = [
+    kw.lower() for kws in _COMPANY_KEYWORDS.values() for kw in kws
+]
 
 # Ambiguous single-word company names that need context to disambiguate
 _AMBIGUOUS_COMPANY_CONTEXT: list[tuple[str, str, list[str]]] = [
@@ -730,6 +825,10 @@ def run():
             continue
         if not _is_about_company(article):
             logger.debug("Skipped (not about company): %s", article.get("title", "")[:80])
+            continue
+        score = _relevance_score(article)
+        if score < 20:
+            logger.debug("Skipped (low relevance score=%d): %s", score, article.get("title", "")[:80])
             continue
         companies = article.get("companies", [])
         if companies == ["Restaurant Tech"] or not companies:
