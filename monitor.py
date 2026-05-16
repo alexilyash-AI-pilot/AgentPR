@@ -2,14 +2,14 @@
 AgentPR — automated news monitor for restaurant tech / competitors.
 
 Run order:
-  1. Load seen URLs from Google Sheets (dedup state)
-  2. Fetch articles from Google News RSS (all keyword groups)
-  3. Fetch articles from NewsAPI (Tier 1 domains)
-  4. Probe direct RSS feeds for Tier 2 + Tier 3 domains
-  5. Filter: date >= CUTOFF_DATE and URL not already seen
-  6. For each new article: append to Google Sheets + send Telegram message
+  1. Fetch articles from all sources (Google News RSS, NewsAPI, direct RSS)
+  2. Load existing articles from Google Sheets for deduplication
+     (falls back to seen_urls.json when Sheets credentials are unavailable)
+  3. For each new article: append to Sheets → send Telegram → mark Sent
+  4. Log summary: X new articles found, Y sent
 """
 
+import json
 import logging
 import os
 import re
@@ -23,9 +23,14 @@ import feedparser
 import requests
 from bs4 import BeautifulSoup
 
-from sheets import append_articles, load_seen_urls, split_author_name
-
-SEEN_URLS_FILE = os.path.join(os.path.dirname(__file__), "seen_urls.json")
+from sheets import (
+    append_article,
+    get_all_articles,
+    is_duplicate,
+    mark_sent,
+    sheets_enabled,
+    split_author_name,
+)
 from sources import (
     ALL_QUERIES,
     CUTOFF_DATE,
@@ -46,6 +51,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+SEEN_URLS_FILE = os.path.join(os.path.dirname(__file__), "seen_urls.json")
 CUTOFF_DT = datetime.fromisoformat(CUTOFF_DATE).replace(tzinfo=timezone.utc)
 REQUEST_HEADERS = {
     "User-Agent": (
@@ -77,7 +83,6 @@ def _parse_date(date_str: Optional[str]) -> Optional[datetime]:
 def _is_after_cutoff(date_str: Optional[str]) -> bool:
     dt = _parse_date(date_str)
     if dt is None:
-        # Unknown date — exclude to avoid surfacing old articles
         return False
     return dt >= CUTOFF_DT
 
@@ -85,18 +90,13 @@ def _is_after_cutoff(date_str: Optional[str]) -> bool:
 def _is_eu_relevant(article: dict) -> bool:
     """
     Returns True if the article is relevant to the EU/European market.
-    Hard-blocks known US-only domains. For international domains, requires
-    at least one EU signal in the title.
+    Hard-blocks known US-only domains. Google News RSS is geo-targeted to
+    GB/EU (gl=GB), so anything not from a US-only domain is considered relevant.
     """
     domain = article.get("_domain", "")
-
-    # Hard-block US-only outlets
     for us_domain in US_ONLY_DOMAINS:
         if us_domain in domain:
             return False
-
-    # Google News RSS is already geo-targeted to GB/EU (gl=GB),
-    # so anything that isn't from a US-only domain is considered EU-relevant.
     return True
 
 
@@ -122,7 +122,6 @@ def _country_for_domain(domain: str) -> str:
 
 
 def _portal_name_from_domain(domain: str) -> str:
-    """Convert domain to a human-readable portal name."""
     name = domain.replace("www.", "").split(".")[0]
     return name.replace("-", " ").title()
 
@@ -150,14 +149,16 @@ _COMPANY_KEYWORDS = {
 }
 
 
-def _match_company(text: str) -> str:
-    """Return the most prominently mentioned tracked company name."""
+def _match_companies(text: str) -> list[str]:
+    """Return all tracked company names mentioned in text."""
     text_lower = text.lower()
+    matches = []
     for company, keywords in _COMPANY_KEYWORDS.items():
         for kw in keywords:
             if kw in text_lower:
-                return company
-    return "Restaurant Tech"
+                matches.append(company)
+                break
+    return matches if matches else ["Restaurant Tech"]
 
 
 def _why_it_matters(article: dict) -> str:
@@ -201,7 +202,6 @@ def _scrape_author_from_url(url: str) -> Optional[str]:
             return None
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        # Try meta tags first (fastest)
         for attr, val in [
             ("name", "author"),
             ("property", "article:author"),
@@ -213,10 +213,8 @@ def _scrape_author_from_url(url: str) -> Optional[str]:
             if tag and tag.get("content"):
                 return tag["content"].strip()
 
-        # JSON-LD
         for script in soup.find_all("script", type="application/ld+json"):
             try:
-                import json
                 data = json.loads(script.string or "")
                 if isinstance(data, list):
                     data = data[0]
@@ -230,7 +228,6 @@ def _scrape_author_from_url(url: str) -> Optional[str]:
             except Exception:
                 continue
 
-        # Byline patterns in HTML
         byline = soup.find(class_=re.compile(r"author|byline|writer", re.I))
         if byline:
             text = byline.get_text(separator=" ").strip()
@@ -244,7 +241,6 @@ def _scrape_author_from_url(url: str) -> Optional[str]:
 
 
 def _strip_html(text: str) -> str:
-    """Remove HTML tags from a string."""
     return re.sub(r"<[^>]+>", "", text or "").strip()
 
 
@@ -260,7 +256,6 @@ def _build_article(entry: dict, query: str = "") -> dict:
     else:
         portal = str(source)
 
-    # Capture description/summary for richer notifications
     raw_desc = entry.get("description") or entry.get("summary") or ""
     description = _strip_html(raw_desc)[:300]
 
@@ -269,7 +264,7 @@ def _build_article(entry: dict, query: str = "") -> dict:
         portal = _portal_name_from_domain(domain)
 
     combined_text = f"{title} {query}"
-    company = _match_company(combined_text)
+    companies = _match_companies(combined_text)
 
     author_first, author_last = split_author_name(author_raw)
 
@@ -277,7 +272,8 @@ def _build_article(entry: dict, query: str = "") -> dict:
         "title": title,
         "url": url,
         "description": description,
-        "company": company,
+        "companies": companies,
+        "company": companies[0],
         "author_first": author_first,
         "author_last": author_last,
         "author_email": "",
@@ -298,7 +294,6 @@ def _build_article(entry: dict, query: str = "") -> dict:
 def fetch_google_news_rss(queries: list[str]) -> list[dict]:
     """Fetch articles from Google News RSS for each query, using EU geo."""
     results = []
-    # Use UK geo (English + European coverage) instead of US
     base = "https://news.google.com/rss/search?q={query}&hl=en-GB&gl=GB&ceid=GB:en"
 
     for query in queries:
@@ -320,7 +315,7 @@ def fetch_google_news_rss(queries: list[str]) -> list[dict]:
                 if article["url"]:
                     results.append(article)
             logger.info("Google News RSS [%s]: %d entries", query, len(feed.entries))
-            time.sleep(0.3)  # polite crawl delay
+            time.sleep(0.3)
         except Exception as exc:
             logger.warning("Google News RSS failed for query '%s': %s", query, exc)
 
@@ -335,7 +330,6 @@ def fetch_newsapi(queries: list[str], domains: list[str]) -> list[dict]:
         return []
 
     results = []
-    # NewsAPI accepts max 20 domains at once
     domain_chunks = [domains[i:i+20] for i in range(0, len(domains), 20)]
     endpoint = "https://newsapi.org/v2/everything"
 
@@ -377,7 +371,6 @@ def fetch_direct_rss(domains: list[str]) -> list[dict]:
     for domain in domains:
         feed_url = None
 
-        # Try probing known RSS paths
         for path in RSS_PATHS:
             candidate = f"https://{domain}{path}"
             try:
@@ -389,7 +382,6 @@ def fetch_direct_rss(domains: list[str]) -> list[dict]:
                 continue
 
         if not feed_url:
-            # Fall back to Google News RSS site: query
             site_query = f"site:{domain}"
             feed_url = f"https://news.google.com/rss/search?q={quote_plus(site_query)}&hl=en"
 
@@ -406,7 +398,6 @@ def fetch_direct_rss(domains: list[str]) -> list[dict]:
                         "source": {"name": feed.feed.get("title", domain)},
                     }
                 )
-                # Only keep articles that mention tracked topics
                 full_text = f"{article['title']}".lower()
                 tracked_terms = [
                     kw.lower() for group in KEYWORD_GROUPS.values() for kw in group
@@ -423,36 +414,10 @@ def fetch_direct_rss(domains: list[str]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Author enrichment
-# ---------------------------------------------------------------------------
-
-def enrich_authors(articles: list[dict]) -> list[dict]:
-    """
-    For articles missing an author, attempt to scrape it from the article page.
-    Limits scraping to avoid long runtimes.
-    """
-    enriched = []
-    scrape_budget = 30  # max pages to scrape per run
-
-    for article in articles:
-        if not article["author_first"] and scrape_budget > 0:
-            author = _scrape_author_from_url(article["url"])
-            if author:
-                first, last = split_author_name(author)
-                article["author_first"] = first
-                article["author_last"] = last
-            scrape_budget -= 1
-        enriched.append(article)
-
-    return enriched
-
-
-# ---------------------------------------------------------------------------
-# Main
+# Fallback: local seen_urls.json (used when Sheets is unavailable)
 # ---------------------------------------------------------------------------
 
 def _load_seen_urls_local() -> set:
-    """Load seen URLs from the local JSON file committed in the repo."""
     if os.path.exists(SEEN_URLS_FILE):
         try:
             with open(SEEN_URLS_FILE) as f:
@@ -463,7 +428,6 @@ def _load_seen_urls_local() -> set:
 
 
 def _save_seen_urls_local(urls: set) -> None:
-    """Persist seen URLs to the local JSON file."""
     try:
         with open(SEEN_URLS_FILE, "w") as f:
             json.dump(sorted(urls), f, indent=2)
@@ -471,32 +435,42 @@ def _save_seen_urls_local(urls: set) -> None:
         logger.error("Failed to save seen_urls.json: %s", exc)
 
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def run():
     logger.info("=== AgentPR run started ===")
 
-    # Step 1: load seen URLs from local file (primary) + Sheets (if configured)
-    seen_urls = _load_seen_urls_local()
-    seen_urls.update(load_seen_urls())
-    logger.info("Loaded %d already-seen URLs total.", len(seen_urls))
-
-    # Step 2: collect raw candidates
+    # Step 1: fetch all raw candidates
     raw: list[dict] = []
-
     raw += fetch_google_news_rss(ALL_QUERIES)
     raw += fetch_newsapi(ALL_QUERIES, TIER1_DOMAINS)
     raw += fetch_direct_rss(TIER2_DOMAINS + TIER3_DOMAINS)
-
     logger.info("Total raw candidates before filtering: %d", len(raw))
 
-    # Step 3: deduplicate, filter by date, EU relevance, and English language
+    # Step 2: load existing articles for deduplication
+    use_sheets = sheets_enabled()
+    if use_sheets:
+        existing = get_all_articles()
+        logger.info("Loaded %d existing articles from Google Sheets.", len(existing))
+        seen_urls_local: set = set()
+    else:
+        existing = []
+        seen_urls_local = _load_seen_urls_local()
+        logger.info(
+            "Sheets not available — loaded %d seen URLs from local fallback.",
+            len(seen_urls_local),
+        )
+
+    # Step 3: filter, dedup, append, notify
     seen_in_run: set[str] = set()
-    new_articles: list[dict] = []
+    new_count = 0
+    sent_count = 0
 
     for article in raw:
         url = article["url"].strip()
         if not url:
-            continue
-        if url in seen_urls or url in seen_in_run:
             continue
         if not _is_after_cutoff(article.get("published_date")):
             logger.debug("Skipped (old date): %s", article.get("title", "")[:60])
@@ -504,29 +478,63 @@ def run():
         if not _is_eu_relevant(article):
             logger.debug("Skipped (not EU): %s | %s", article.get("_domain", ""), article.get("title", "")[:60])
             continue
+        if url in seen_in_run:
+            continue
+
+        title = article.get("title", "")
+
+        if use_sheets:
+            if is_duplicate(url, title, existing):
+                logger.debug("Duplicate (Sheets): %s", title[:60])
+                continue
+        else:
+            if url in seen_urls_local:
+                logger.debug("Duplicate (local): %s", title[:60])
+                continue
+
         seen_in_run.add(url)
-        new_articles.append(article)
+        new_count += 1
 
-    logger.info("New articles after dedup + date + EU relevance filter: %d", len(new_articles))
+        # Build the sheet row for this article
+        now_iso = datetime.utcnow().isoformat()
+        companies = article.get("companies", [article.get("company", "Restaurant Tech")])
+        sheet_row = {
+            "date_added": now_iso,
+            "publication_date": article.get("published_date", ""),
+            "title": title,
+            "company_mentions": ", ".join(companies),
+            "short_summary": article.get("description", "")[:200],
+            "portal": article.get("portal", ""),
+            "url": url,
+            "status": "Not Sent",
+            "first_detected_time": now_iso,
+        }
 
-    # Step 4: enrich missing authors via page scraping
-    new_articles = enrich_authors(new_articles)
+        if use_sheets:
+            append_article(sheet_row)
+        else:
+            seen_urls_local.add(url)
 
-    # Step 5: persist seen URLs locally so next run skips them
-    all_seen = seen_urls | {a["url"] for a in new_articles}
-    _save_seen_urls_local(all_seen)
+        # Send Telegram notification
+        sent = send_article(article)
+        if sent:
+            sent_count += 1
+            if use_sheets:
+                mark_sent(url)
 
-    # Step 6: write to Sheets (optional) + notify Telegram
-    written = append_articles(new_articles)
-    if written:
-        logger.info("Wrote %d articles to Google Sheets.", written)
+        time.sleep(0.5)
 
-    for article in new_articles:
-        send_article(article)
-        time.sleep(0.5)  # avoid Telegram rate limit
+    # Persist fallback state when Sheets is unavailable
+    if not use_sheets:
+        _save_seen_urls_local(seen_urls_local)
 
-    send_summary(len(new_articles))
-    logger.info("=== AgentPR run complete. %d new articles. ===", len(new_articles))
+    # Step 4: summary
+    send_summary(new_count)
+    logger.info(
+        "=== AgentPR run complete. %d new articles found, %d sent. ===",
+        new_count,
+        sent_count,
+    )
 
 
 if __name__ == "__main__":

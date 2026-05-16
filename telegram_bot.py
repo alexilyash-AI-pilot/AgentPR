@@ -23,23 +23,35 @@ def send_article(article: dict) -> bool:
         logger.error("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set.")
         return False
 
-    company = article.get("company", "—")
+    title = article.get("title", "No title")
     portal = article.get("portal", "—")
     pub_date = article.get("published_date", "—")
     url = article.get("url", "")
-    title = article.get("title", "No title")
     description = article.get("description", "").strip()
-    why_it_matters = article.get("why_it_matters", "Noteworthy development in the restaurant technology landscape.")
 
-    summary = description if description else "No summary available."
+    # Resolve company mentions: prefer list, fall back to single string
+    companies: list[str] = article.get("companies") or []
+    if not companies:
+        single = article.get("company", "")
+        companies = [single] if single else ["Restaurant Tech"]
+
+    # First sentence as the one-line summary
+    if description:
+        summary = description.split(". ")[0].strip()
+        if not summary.endswith("."):
+            summary += "."
+    else:
+        summary = "No summary available."
+
+    company_bullets = "\n".join(f"• {_escape(c)}" for c in companies)
 
     text = (
-        f"🏢 <b>{_escape(company)}</b>\n"
-        f"📰 {_escape(title)}\n"
-        f"📅 {pub_date}\n"
-        f"📝 {_escape(summary)}\n"
-        f"💡 {_escape(why_it_matters)}\n"
-        f'🔗 <a href="{url}">{_escape(portal)}</a>'
+        f"📰 <b>{_escape(title)}</b>\n\n"
+        f"🏢 Company mentions:\n{company_bullets}\n\n"
+        f"📝 Summary:\n{_escape(summary)}\n\n"
+        f"🌐 Portal:\n{_escape(portal)}\n\n"
+        f"🔗 Link:\n{url}\n\n"
+        f"📅 Publication date: {pub_date}"
     )
 
     payload = {

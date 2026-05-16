@@ -1,6 +1,7 @@
-import os
+import difflib
 import json
 import logging
+import os
 from datetime import datetime
 from typing import Optional
 
@@ -20,20 +21,23 @@ SCOPES = [
 ]
 
 SHEET_HEADERS = [
-    "Article Name",
-    "Article Link",
-    "Company",
-    "Editor Name",
-    "Editor Surname",
-    "Editor Email",
-    "Country",
+    "Date Added",
+    "Publication Date",
+    "Article Title",
+    "Company Mentions",
+    "Short Summary",
     "Portal Name",
-    "Date Published",
-    "Date Found",
+    "Article URL",
+    "Status",
+    "First Detected Time",
 ]
 
+# Column indices (1-based) used for direct cell operations
+_COL_URL = 7
+_COL_STATUS = 8
 
-def _sheets_enabled() -> bool:
+
+def sheets_enabled() -> bool:
     return (
         _GSPREAD_AVAILABLE
         and bool(os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON"))
@@ -55,63 +59,92 @@ def _get_worksheet(client):
         ws = sheet.worksheet("Articles")
     except gspread.WorksheetNotFound:
         ws = sheet.add_worksheet(title="Articles", rows=5000, cols=len(SHEET_HEADERS))
+
+    # Initialize headers only when the sheet is completely empty
+    existing = ws.get_all_values()
+    if not existing:
         ws.append_row(SHEET_HEADERS, value_input_option="RAW")
-        logger.info("Created 'Articles' worksheet with headers.")
+        logger.info("Initialized 'Articles' worksheet with new headers.")
+
     return ws
 
 
-def load_seen_urls() -> set:
-    """Return the set of article URLs already logged in the sheet (if configured)."""
-    if not _sheets_enabled():
-        logger.info("Google Sheets not configured — skipping Sheets URL load.")
-        return set()
+def get_all_articles() -> list[dict]:
+    """Return all rows from sheet as list of dicts keyed by column name."""
+    if not sheets_enabled():
+        logger.info("Google Sheets not configured — returning empty article list.")
+        return []
     try:
         client = _get_client()
         ws = _get_worksheet(client)
-        links = ws.col_values(2)
-        return set(url.strip() for url in links[1:] if url.strip())
+        return ws.get_all_records()
     except Exception as exc:
-        logger.error("Failed to load seen URLs from Sheets: %s", exc)
-        return set()
+        logger.error("get_all_articles failed: %s", exc)
+        return []
 
 
-def append_articles(articles: list[dict]) -> int:
-    """
-    Append a list of article dicts to the sheet.
-    Each dict must have keys matching SHEET_HEADERS (snake_case accepted too).
-    Returns the count of rows actually written.
-    """
-    if not articles:
-        return 0
+def is_duplicate(url: str, title: str, existing: list[dict]) -> bool:
+    """Return True if URL matches exactly OR title similarity > 0.85."""
+    url_clean = url.strip()
+    title_lower = title.lower().strip()
+    for row in existing:
+        if row.get("Article URL", "").strip() == url_clean:
+            return True
+        existing_title = row.get("Article Title", "").lower().strip()
+        if existing_title and title_lower:
+            ratio = difflib.SequenceMatcher(None, title_lower, existing_title).ratio()
+            if ratio > 0.85:
+                return True
+    return False
 
-    if not _sheets_enabled():
-        logger.info("Google Sheets not configured — skipping Sheets append.")
-        return 0
 
+def append_article(article: dict) -> bool:
+    """Append one article row. Returns True on success."""
+    if not sheets_enabled():
+        return False
     try:
         client = _get_client()
         ws = _get_worksheet(client)
-        today = datetime.utcnow().strftime("%Y-%m-%d")
-        rows = []
-        for a in articles:
-            rows.append([
-                a.get("title", ""),
-                a.get("url", ""),
-                a.get("company", ""),
-                a.get("author_first", ""),
-                a.get("author_last", ""),
-                a.get("author_email", ""),
-                a.get("country", ""),
-                a.get("portal", ""),
-                a.get("published_date", ""),
-                today,
-            ])
-        ws.append_rows(rows, value_input_option="USER_ENTERED")
-        logger.info("Appended %d rows to Google Sheets.", len(rows))
-        return len(rows)
+        now = datetime.utcnow().isoformat()
+        row = [
+            article.get("date_added", now),
+            article.get("publication_date", ""),
+            article.get("title", ""),
+            article.get("company_mentions", ""),
+            article.get("short_summary", ""),
+            article.get("portal", ""),
+            article.get("url", ""),
+            article.get("status", "Not Sent"),
+            article.get("first_detected_time", now),
+        ]
+        ws.append_row(row, value_input_option="USER_ENTERED")
+        logger.debug("Appended article: %s", article.get("title", "")[:60])
+        return True
     except Exception as exc:
-        logger.error("Failed to append articles to Sheets: %s", exc)
-        return 0
+        logger.error("append_article failed: %s", exc)
+        return False
+
+
+def mark_sent(url: str) -> bool:
+    """Find row by URL and update Status to 'Sent'. Returns True on success."""
+    if not sheets_enabled():
+        return False
+    try:
+        client = _get_client()
+        ws = _get_worksheet(client)
+        url_col = ws.col_values(_COL_URL)
+        url_clean = url.strip()
+        for i, cell_url in enumerate(url_col):
+            if cell_url.strip() == url_clean:
+                row_idx = i + 1  # gspread rows are 1-indexed
+                ws.update_cell(row_idx, _COL_STATUS, "Sent")
+                logger.debug("Marked row %d as Sent.", row_idx)
+                return True
+        logger.warning("mark_sent: URL not found in sheet: %s", url[:80])
+        return False
+    except Exception as exc:
+        logger.error("mark_sent failed: %s", exc)
+        return False
 
 
 def split_author_name(full_name: Optional[str]) -> tuple[str, str]:
