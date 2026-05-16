@@ -33,3 +33,11 @@ jobs:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
         run: python monitor.py
+
+      - name: Commit updated seen_urls.json
+        run: |
+          git config user.name "AgentPR Bot"
+          git config user.email "agentpr@users.noreply.github.com"
+          git add seen_urls.json
+          git diff --cached --quiet || git commit -m "chore: update seen_urls [skip ci]"
+          git push

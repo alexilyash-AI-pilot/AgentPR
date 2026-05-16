@@ -24,6 +24,8 @@ import requests
 from bs4 import BeautifulSoup
 
 from sheets import append_articles, load_seen_urls, split_author_name
+
+SEEN_URLS_FILE = os.path.join(os.path.dirname(__file__), "seen_urls.json")
 from sources import (
     ALL_QUERIES,
     CUTOFF_DATE,
@@ -375,12 +377,33 @@ def enrich_authors(articles: list[dict]) -> list[dict]:
 # Main
 # ---------------------------------------------------------------------------
 
+def _load_seen_urls_local() -> set:
+    """Load seen URLs from the local JSON file committed in the repo."""
+    if os.path.exists(SEEN_URLS_FILE):
+        try:
+            with open(SEEN_URLS_FILE) as f:
+                return set(json.load(f))
+        except Exception:
+            pass
+    return set()
+
+
+def _save_seen_urls_local(urls: set) -> None:
+    """Persist seen URLs to the local JSON file."""
+    try:
+        with open(SEEN_URLS_FILE, "w") as f:
+            json.dump(sorted(urls), f, indent=2)
+    except Exception as exc:
+        logger.error("Failed to save seen_urls.json: %s", exc)
+
+
 def run():
     logger.info("=== AgentPR run started ===")
 
-    # Step 1: load seen URLs
-    seen_urls = load_seen_urls()
-    logger.info("Loaded %d already-seen URLs from Sheets.", len(seen_urls))
+    # Step 1: load seen URLs from local file (primary) + Sheets (if configured)
+    seen_urls = _load_seen_urls_local()
+    seen_urls.update(load_seen_urls())
+    logger.info("Loaded %d already-seen URLs total.", len(seen_urls))
 
     # Step 2: collect raw candidates
     raw: list[dict] = []
@@ -411,9 +434,14 @@ def run():
     # Step 4: enrich missing authors via page scraping
     new_articles = enrich_authors(new_articles)
 
-    # Step 5: write to Sheets + notify Telegram
+    # Step 5: persist seen URLs locally so next run skips them
+    all_seen = seen_urls | {a["url"] for a in new_articles}
+    _save_seen_urls_local(all_seen)
+
+    # Step 6: write to Sheets (optional) + notify Telegram
     written = append_articles(new_articles)
-    logger.info("Wrote %d articles to Google Sheets.", written)
+    if written:
+        logger.info("Wrote %d articles to Google Sheets.", written)
 
     for article in new_articles:
         send_article(article)

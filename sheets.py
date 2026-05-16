@@ -4,8 +4,13 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-import gspread
-from google.oauth2.service_account import Credentials
+# gspread is optional — Sheets logging is skipped if credentials are not configured
+try:
+    import gspread
+    from google.oauth2.service_account import Credentials
+    _GSPREAD_AVAILABLE = True
+except ImportError:
+    _GSPREAD_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -28,15 +33,22 @@ SHEET_HEADERS = [
 ]
 
 
-def _get_client() -> gspread.Client:
-    """Build an authenticated gspread client from the env-injected service account JSON."""
+def _sheets_enabled() -> bool:
+    return (
+        _GSPREAD_AVAILABLE
+        and bool(os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON"))
+        and bool(os.environ.get("SPREADSHEET_ID"))
+    )
+
+
+def _get_client():
     raw = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
     info = json.loads(raw)
     creds = Credentials.from_service_account_info(info, scopes=SCOPES)
     return gspread.authorize(creds)
 
 
-def _get_worksheet(client: gspread.Client) -> gspread.Worksheet:
+def _get_worksheet(client):
     spreadsheet_id = os.environ["SPREADSHEET_ID"]
     sheet = client.open_by_key(spreadsheet_id)
     try:
@@ -49,13 +61,14 @@ def _get_worksheet(client: gspread.Client) -> gspread.Worksheet:
 
 
 def load_seen_urls() -> set:
-    """Return the set of article URLs already logged in the sheet."""
+    """Return the set of article URLs already logged in the sheet (if configured)."""
+    if not _sheets_enabled():
+        logger.info("Google Sheets not configured — skipping Sheets URL load.")
+        return set()
     try:
         client = _get_client()
         ws = _get_worksheet(client)
-        # Column B (index 1) is Article Link
         links = ws.col_values(2)
-        # Skip header row
         return set(url.strip() for url in links[1:] if url.strip())
     except Exception as exc:
         logger.error("Failed to load seen URLs from Sheets: %s", exc)
@@ -69,6 +82,10 @@ def append_articles(articles: list[dict]) -> int:
     Returns the count of rows actually written.
     """
     if not articles:
+        return 0
+
+    if not _sheets_enabled():
+        logger.info("Google Sheets not configured — skipping Sheets append.")
         return 0
 
     try:
