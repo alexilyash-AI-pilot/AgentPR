@@ -86,7 +86,7 @@ All source URLs and domain tier classifications are defined in `sources.py`.
 
 ## Filtering Pipeline
 
-Articles pass through five sequential filters before being saved:
+Articles pass through a strict relevance policy before being saved:
 
 1. **Date cutoff** — Only articles published on or after January 1, 2026 are kept.
 
@@ -95,13 +95,17 @@ Articles pass through five sequential filters before being saved:
    - Domain is classified as TIER1 or TIER2 in `sources.py`
    - Article body contains an EU-related keyword
 
-3. **Company-as-subject** — Rejects listicles and round-ups ("best restaurants in X", "top 10 apps") that merely mention a company name without it being the subject of the story.
+3. **Tracked-company match** — The article title or summary must explicitly mention at least one of the 19 monitored companies. Generic `Restaurant Tech` matches and query-only matches are rejected.
 
-4. **Cross-run deduplication** — Checks the Google Sheet master database:
+4. **Company-news relevance** — The tracked company must be the subject of the article or part of a meaningful business/product update, such as funding, investment, acquisitions, partnerships, integrations, launches, AI, POS integrations, QR ordering updates, reservations platform updates, delivery management updates, loyalty/CRM, market expansion, enterprise deals, executive hires, or strategic changes.
+
+5. **Consumer restaurant noise rejection** — Restaurant openings, food-writer recommendations, dining guides, food weeks, local venue lists, menu announcements, set/seasonal/tasting/holiday menus, restaurant-week deals, Super Bowl deals, open-hours stories, best/top restaurant lists, Michelin guides, restaurant reviews, hotel/spa/Disney/venue reopenings, and chef/venue-specific stories are rejected even when they contain broad restaurant keywords. Confirmed rejected examples include "White Tiger" restaurant openings, "Indian regional flavours", "Liverpool food and drink writer", "favourite venues", "new city centre restaurant", "mum's cooking", "Mile High Asian Food Week", "where to dine", and "food week".
+
+6. **Cross-run deduplication** — Checks the Google Sheet master database:
    - Exact URL match → skip
    - Title similarity > 85% (fuzzy) → skip
 
-5. **Within-run story dedup** — Among articles collected in the same run covering the same story (title similarity > 70%), only the highest-tier source is kept.
+7. **Within-run story dedup** — Among articles collected in the same run covering the same story (title similarity > 70%), only the highest-tier source is kept.
 
 ---
 

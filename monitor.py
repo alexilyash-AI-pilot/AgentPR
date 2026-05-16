@@ -210,7 +210,14 @@ _FOOD_NOISE_PHRASES = [
     "best restaurants", "top restaurants", "where to eat", "places to eat",
     "dining guide", "best menus", "menu guide", "new restaurants and menus",
     "menus to bookmark", "bookmark this weekend", "mother's day",
-    "mother’s day", "mothers day",
+    "mother’s day", "mothers day", "easter menu", "super bowl",
+    "open or closed", "open hours", "opening hours", "holiday hours",
+    "where to dine", "food week", "restaurant review", "new restaurant",
+    "restaurant opening", "restaurant openings", "white tiger",
+    "indian regional flavours", "indian regional flavors",
+    "liverpool food and drink writer", "favourite venues", "favorite venues",
+    "new city centre restaurant", "new city center restaurant",
+    "mum's cooking", "mom's cooking", "mile high asian food week",
 ]
 
 _GENERIC_ARTICLE_TITLE_PATTERNS = [
@@ -226,6 +233,67 @@ _RESTAURANT_VENUE_SIGNALS = [
     "restaurant", "restaurants", "cafe", "bistro", "eatery", "diner",
     "brasserie", "menu", "menus", "chef", "burgers", "catfish",
     "boudin balls", "tigerfish",
+]
+
+_STRICT_RESTAURANT_NOISE_PHRASES = [
+    # User-confirmed examples and equivalent local restaurant coverage.
+    "white tiger",
+    "indian regional flavours",
+    "indian regional flavors",
+    "liverpool food and drink writer",
+    "favourite venues",
+    "favorite venues",
+    "new city centre restaurant",
+    "new city center restaurant",
+    "mum's cooking",
+    "mom's cooking",
+    "mile high asian food week",
+    "where to dine",
+    "food week",
+    # Broader classes that are not restaurant-tech company news.
+    "restaurant week",
+    "best restaurants",
+    "top restaurants",
+    "highest-rated restaurants",
+    "where to eat",
+    "places to eat",
+    "dining guide",
+    "michelin guide",
+    "restaurant review",
+    "food writer",
+    "set menu",
+    "seasonal menu",
+    "new menu",
+    "tasting menu",
+    "valentine",
+    "mother's day",
+    "mother’s day",
+    "mothers day",
+    "easter menu",
+    "christmas menu",
+    "super bowl",
+    "open or closed",
+    "open hours",
+    "opening hours",
+    "holiday hours",
+    "hotel reopening",
+    "spa reopening",
+    "disney reopening",
+]
+
+_STRICT_RESTAURANT_NOISE_PATTERNS = [
+    re.compile(r"\b(where to (?:dine|eat)|places to eat)\b", re.I),
+    re.compile(r"\b(?:best|top|favo[u]?rite|highest-rated)\b.*\b(?:restaurants?|venues?|places|dining)\b", re.I),
+    re.compile(r"\b(?:restaurants?|food)\s+week\b", re.I),
+    re.compile(r"\b(?:set|seasonal|new|tasting|holiday|valentine'?s|mother'?s day|easter|christmas)\s+menus?\b", re.I),
+    re.compile(r"\bmenus?\s+(?:announced|announcement|to bookmark|for|at|from)\b", re.I),
+    re.compile(r"\b(?:open|closed)\s+(?:on|for)\s+(?:christmas|easter|mother'?s day|valentine'?s day|thanksgiving|super bowl)\b", re.I),
+    re.compile(r"\b(?:open|closed|opening)\s+hours?\b", re.I),
+    re.compile(r"\b(?:chains?|restaurants?)\s+(?:open|closed)\b", re.I),
+    re.compile(r"\b(?:restaurants?|cafes?|bistros?|bars?|venues?|hotels?|spas?|disney)\s+(?:re-?opens?|re-?opening|opens?|opening)\b", re.I),
+    re.compile(r"\b(?:to open|will open|set to open)\b.*\b(?:restaurants?|cafes?|bistros?|bars?|venues?)\b", re.I),
+    re.compile(r"\bnew\b.*\b(?:city centre|city center)\b.*\brestaurants?\b", re.I),
+    re.compile(r"\b(?:restaurant|venue|chef|food)\s+(?:review|recommendations?|round-?up|guide|list)\b", re.I),
 ]
 
 # US geographic signals that flag US-only content
@@ -253,6 +321,9 @@ def _relevance_score(article: dict) -> int:
       -20  title references a restaurant venue (not a tech company)
     Threshold: score < 20 → reject.
     """
+    if not _is_strictly_relevant_company_news(article):
+        return 0
+
     title = article.get("title", "").lower()
     description = article.get("description", "").lower()
     combined = f"{title} {description}"
@@ -300,6 +371,62 @@ def _relevance_score(article: dict) -> int:
             score -= 20
 
     return max(score, 0)
+
+
+def _matched_tracked_companies(article: dict) -> list[str]:
+    """Return tracked companies found in article content, excluding query-only hits."""
+    matches = _match_companies(
+        article.get("title", ""),
+        description=article.get("description", ""),
+    )
+    return [company for company in matches if company != "Restaurant Tech"]
+
+
+def _is_restaurant_consumer_noise(article: dict) -> bool:
+    """Reject restaurant openings, guides, menus, reviews, holidays, and venue news."""
+    title = article.get("title", "")
+    description = article.get("description", "")
+    combined = f"{title} {description}".lower()
+
+    if any(phrase in combined for phrase in _STRICT_RESTAURANT_NOISE_PHRASES):
+        return True
+    if any(pattern.search(combined) for pattern in _STRICT_RESTAURANT_NOISE_PATTERNS):
+        return True
+
+    return False
+
+
+def _has_company_news_signal(article: dict, matched_companies: list[str]) -> bool:
+    """Return True when a tracked company is the article subject or business context."""
+    title = article.get("title", "").lower()
+    description = article.get("description", "").lower()
+    combined = f"{title} {description}"
+
+    for company in matched_companies:
+        keywords = _COMPANY_KEYWORDS.get(company, [])
+        if any(keyword in title for keyword in keywords):
+            return True
+
+    return any(signal in combined for signal in _RELEVANCE_BUSINESS_SIGNALS)
+
+
+def _is_strictly_relevant_company_news(article: dict) -> bool:
+    """
+    Keep only meaningful news about one of the 19 tracked restaurant-tech companies.
+
+    Broad restaurant keywords, generic "Restaurant Tech" matches, dining guides,
+    restaurant openings, menu stories, holiday hours, and local venue coverage are
+    rejected even when they came from a restaurant-tech search query.
+    """
+    matched_companies = _matched_tracked_companies(article)
+    if not matched_companies:
+        return False
+    if _is_restaurant_consumer_noise(article):
+        return False
+    if not _is_eu_relevant(article):
+        return False
+
+    return _has_company_news_signal(article, matched_companies)
 
 
 def _is_about_company(article: dict) -> bool:
@@ -372,7 +499,7 @@ def _portal_name_from_domain(domain: str) -> str:
 
 _COMPANY_KEYWORDS = {
     "Deliverect": ["deliverect"],
-    "Sunday": ["sunday.app", "sundayapp", "sunday app qr", "sunday app payment",
+    "Sunday": ["sunday.app", "sundayapp", "sunday app", "sunday app qr", "sunday app payment",
                "sunday payment", "sunday qr"],
     "Flipdish": ["flipdish"],
     "StoreKit": ["storekit"],
@@ -411,7 +538,7 @@ _AMBIGUOUS_COMPANY_CONTEXT: list[tuple[str, str, list[str]]] = [
     (
         "Sunday",
         "sunday",
-        ["restaurant", "payment", "qr", "hospitality"],
+        ["payment", "qr", "hospitality", "funding", "raises", "investment"],
     ),
     (
         "Otter",
@@ -422,8 +549,8 @@ _AMBIGUOUS_COMPANY_CONTEXT: list[tuple[str, str, list[str]]] = [
 
 
 def _match_companies(title: str, description: str = "", query: str = "") -> list[str]:
-    """Return all tracked company names mentioned in title/description/query."""
-    combined = f"{title} {description} {query}".lower()
+    """Return all tracked company names mentioned in article content."""
+    combined = f"{title} {description}".lower()
     matches = []
 
     # Exact keyword matching across all three fields
@@ -635,8 +762,7 @@ def _build_article(entry: dict, query: str = "") -> dict:
     if not portal:
         portal = _portal_name_from_domain(domain)
 
-    combined_text = f"{title} {query}"
-    companies = _match_companies(combined_text, description=description)
+    companies = _match_companies(title, description=description)
 
     author_first, author_last = split_author_name(author_raw)
 
@@ -849,6 +975,9 @@ def run():
         if not _is_eu_relevant(article):
             logger.debug("Skipped (not EU): %s | %s", article.get("_domain", ""), article.get("title", "")[:60])
             continue
+        if not _is_strictly_relevant_company_news(article):
+            logger.debug("Skipped (not strict company news): %s", article.get("title", "")[:80])
+            continue
         if not _is_about_company(article):
             logger.debug("Skipped (not about company): %s", article.get("title", "")[:80])
             continue
@@ -856,10 +985,12 @@ def run():
         if score < 20:
             logger.debug("Skipped (low relevance score=%d): %s", score, article.get("title", "")[:80])
             continue
-        companies = article.get("companies", [])
-        if companies == ["Restaurant Tech"] or not companies:
+        companies = _matched_tracked_companies(article)
+        if not companies:
             logger.debug("Skipped (no tracked company match): %s", article.get("title", "")[:80])
             continue
+        article["companies"] = companies
+        article["company"] = companies[0]
         if url in seen_in_run:
             continue
 
