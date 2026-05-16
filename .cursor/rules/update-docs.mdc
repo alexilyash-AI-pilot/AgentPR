@@ -1,0 +1,18 @@
+---
+description: Keep README.md up to date after every change to AgentPR
+globs: **/*.py,**/*.yml,**/*.json
+alwaysApply: false
+---
+
+# AgentPR Documentation Rule
+
+After making any changes to the AgentPR project, update `README.md` to reflect:
+- New companies added to monitoring
+- Changes to filtering logic or thresholds  
+- New sources added to `sources.py`
+- Changes to Telegram message format
+- Changes to Google Sheet schema
+- Changes to the bot behavior or system prompt
+- Any new environment variables or secrets required
+
+Keep the README accurate and current — it is the single source of truth for how the system works.

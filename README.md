@@ -1,230 +1,217 @@
-# AgentPR — EU Restaurant Tech News Monitor
+# AgentPR
 
-Automatically scans ~50 European and English-language media portals **every 6 hours** for articles about AI in restaurants, Choice (your brand), and key competitors.
-
-Results are logged to a Google Sheet and sent as Telegram notifications.  
-Runs entirely on **GitHub Actions** — no server or laptop needed.
+Automated PR and media monitoring system for [ChoiceQR](https://choiceqr.com), a European restaurant QR-ordering software company. Tracks competitor and industry news across ~80 sources, stores results in Google Sheets, and delivers summaries via Telegram.
 
 ---
 
-## What the Agent Does
+## Architecture
 
-Every 6 hours the agent:
+The system has two independent parts:
 
-1. **Fetches** articles from three sources:
-   - Google News RSS (all keyword groups, EU geo-targeted)
-   - NewsAPI (European + international English-language outlets)
-   - Direct RSS feeds (Tier 2 & Tier 3 EU portals)
+| Part | Runtime | Entry point |
+|------|---------|-------------|
+| **Daily Monitor** | GitHub Actions (cron) | `monitor.py` |
+| **Interactive Bot** | Railway (always-on) | `bot_server.py` |
 
-2. **Filters** — an article passes only if ALL four conditions are met:
-   - **Language:** English (titles with non-Latin script are dropped)
-   - **Geography:** Published by a European/EU outlet OR title explicitly mentions a European country, city, or one of your tracked companies
-   - **Date:** Published on or after **1 May 2026** (articles with unknown dates are excluded)
-   - **Deduplication:** URL has not been seen in any previous run
+```
+┌─────────────────────────────────────────────────────┐
+│                  Daily Monitor                       │
+│  GitHub Actions · 09:00 CET · monitor.py            │
+│                                                      │
+│  RSS feeds / media outlets                          │
+│       ↓                                              │
+│  Fetch & parse articles                             │
+│       ↓                                              │
+│  Filter pipeline (date → EU → subject → dedup)      │
+│       ↓                          ↓                   │
+│  Google Sheet            Telegram group              │
+└─────────────────────────────────────────────────────┘
 
-3. **Enriches** — for articles with no author in the feed, the agent scrapes the article page for a byline
-
-4. **Logs** every new article to the **Google Sheet** (AgentPR Articles)
-
-5. **Notifies** your Telegram group with article title, link, author, portal, country, and company matched
-
----
-
-## Monitored Topics
-
-### Your Brand
-- Choice restaurant CRM / choice.app / Czech Choice restaurant
-
-### Competitors
-| Company | Keywords tracked |
-|---|---|
-| Sunday.app | sunday.app, sunday app |
-| Deliverect | deliverect |
-| Restimo | restimo |
-| Restaumatic | restaumatic |
-| Upmenu | upmenu |
-
-### AI & Restaurant Tech Topics
-- AI restaurant, restaurant automation, foodtech AI
-- Restaurant technology startup, restaurant SaaS platform
-- Restaurant digitalization, restaurant CRM, restaurant POS
-- Restaurant startup funding, foodtech investment, Series A/seed
+┌─────────────────────────────────────────────────────┐
+│                 Interactive Bot                      │
+│  Railway · @ChoicePRbot · bot_server.py             │
+│                                                      │
+│  Telegram message                                   │
+│       ↓                                              │
+│  FastAPI webhook → OpenAI GPT-4o-mini (tool calls)  │
+│       ↓                                              │
+│  search_articles / send_to_group / create_sheet_tab  │
+└─────────────────────────────────────────────────────┘
+```
 
 ---
 
-## Monitored Sources
+## Monitored Companies
 
-### Tier 1 — European & international English-language outlets
-Sifted, FT, The Guardian, Bloomberg, Reuters, Euronews, Euractiv,
-Politico, The Times, The Economist, Wired, Daily Mail, Cybernews,
-Pathfounders
+19 companies are tracked (competitors and industry players):
 
-> **US-only outlets are excluded** (TechCrunch, NYT, WSJ, Forbes, Axios, Fortune, CNBC, Business Insider, The Verge, etc.)  
-> International outlets (Reuters, Bloomberg) only pass if the article title contains a European signal.
+| # | Company |
+|---|---------|
+| 1 | Deliverect |
+| 2 | Sunday |
+| 3 | Flipdish |
+| 4 | StoreKit |
+| 5 | UpMenu |
+| 6 | Restimo |
+| 7 | Restaumatic |
+| 8 | TheFork |
+| 9 | OpenTable |
+| 10 | Quandoo |
+| 11 | Tableo |
+| 12 | ResDiary |
+| 13 | Zenchef |
+| 14 | Eat App |
+| 15 | SevenRooms |
+| 16 | Otter |
+| 17 | TableQR |
+| 18 | MENU TIGER |
+| 19 | ChoiceQR |
 
-### Tier 2 — European startup & tech portals
-EU-Startups, Sifted, tech.eu, Silicon Canals, The Recursive, ITKey.media,
-TechFundingNews, Dispatches Europe, Maddyness, Vestbee, Startup Reporter,
-Crunchbase News, The Next Web, The SaaS News, Restaurant Technology News
-
-### Tier 3 — Regional portals
-Startup Rise (UK), Forbes Hungary, Netokracija (Croatia), Bebeez (Italy),
-Technews180, Start-up.ro, Friss Hírek (Hungary)
-
----
-
-## EU Relevance Filter Logic
-
-An article is considered **EU-relevant** if any of the following is true:
-
-1. **Domain is EU-specific** — e.g., `.eu`, `sifted.eu`, `euractiv.com`, `maddyness.com`, `siliconcanals.com`, `therecursive.com`, `cybernews.com`, etc.
-2. **Title mentions a European country** — France, Germany, UK, Netherlands, Poland, Czech Republic, Spain, Italy, Sweden, etc.
-3. **Title mentions a European city** — London, Paris, Berlin, Amsterdam, Prague, Warsaw, Dublin, Brussels, etc.
-4. **Title mentions a tracked company** — Deliverect, Restimo, Restaumatic, Upmenu, Sunday.app, Choice restaurant
+All company names and associated keywords are defined in `sources.py`.
 
 ---
 
-## Google Sheet Columns
+## Sources
 
-Sheet: **AgentPR Articles** → tab: `Sheet1`
+Approximately 80 sources are queried each run:
+
+- **Google News RSS** — geo-targeted EU feeds per company
+- **~25 major media outlets** — TechCrunch, Bloomberg, Reuters, Forbes, and similar
+- **~15 startup/tech ecosystem portals** — tech.eu, sifted.eu, eu-startups.com, and similar
+- **Direct RSS from regional EU portals**
+
+All source URLs and domain tier classifications are defined in `sources.py`.
+
+---
+
+## Filtering Pipeline
+
+Articles pass through five sequential filters before being saved:
+
+1. **Date cutoff** — Only articles published on or after January 1, 2026 are kept.
+
+2. **EU relevance** — Article must satisfy at least one of:
+   - Domain has an EU country-code TLD (`.de`, `.fr`, `.nl`, etc.)
+   - Domain is classified as TIER1 or TIER2 in `sources.py`
+   - Article body contains an EU-related keyword
+
+3. **Company-as-subject** — Rejects listicles and round-ups ("best restaurants in X", "top 10 apps") that merely mention a company name without it being the subject of the story.
+
+4. **Cross-run deduplication** — Checks the Google Sheet master database:
+   - Exact URL match → skip
+   - Title similarity > 85% (fuzzy) → skip
+
+5. **Within-run story dedup** — Among articles collected in the same run covering the same story (title similarity > 70%), only the highest-tier source is kept.
+
+---
+
+## Google Sheet Schema
+
+Master database: [`1nSkFz_2kUs76LIO_mcl5x0WvhuESyRWJ4bSigOoO5UM`](https://docs.google.com/spreadsheets/d/1nSkFz_2kUs76LIO_mcl5x0WvhuESyRWJ4bSigOoO5UM)
 
 | Column | Description |
-|---|---|
-| Article Name | Headline of the article |
-| Article Link | Full URL |
-| Company | Tracked company/topic matched (Choice, Deliverect, etc.) |
-| Editor Name | Author first name |
-| Editor Surname | Author last name |
-| Editor Email | Blank (can be enriched manually or via Hunter.io) |
-| Country | Country of the publication outlet |
-| Portal Name | Name of the media portal |
-| Date Published | When the article was published (YYYY-MM-DD) |
-| Date Found | Date the agent discovered it |
+|--------|-------------|
+| Date Added | When the row was written to the sheet |
+| Publication Date | Article publish date from the RSS feed |
+| Article Title | Full article headline |
+| Company Mentions | Which tracked companies appear in the article |
+| Short Summary | Auto-generated one-line summary |
+| Portal Name | Name of the publishing outlet |
+| Article URL | Canonical article URL |
+| Status | `Sent` or `Not Sent` (Telegram delivery status) |
+| First Detected Time | Timestamp of first detection across all runs |
+
+Sheet integration is handled by `sheets.py`.
 
 ---
 
-## Telegram Notifications
+## Telegram Format
 
-Each new article triggers a message like:
+Notifications are sent to group `-1003524787352` by `@AiPRChoice`.
 
-```
-📰 [Article title]
+Each message contains:
+- Company name
+- Article title
+- Short summary
+- Portal name
+- Article link
+- Publication date
+- Link to the Google Sheet
 
-🔗 https://...
-🏢 About: Deliverect
-✍️ Editor: Jane Smith
-🌐 Portal: EU Startups
-🗺 Country: Europe
-📅 Published: 2026-05-12
-```
+Errors and pipeline failures are also sent as Telegram alerts to the same group.
 
-### Pausing / resuming Telegram
-
-To **pause** notifications:  
-→ Go to [Settings → Secrets](https://github.com/alexilyash-AI-pilot/AgentPR/settings/secrets/actions) → add secret `TELEGRAM_DISABLED` = `1`
-
-To **resume** notifications:  
-→ Delete the `TELEGRAM_DISABLED` secret
-
-The agent continues collecting to the Google Sheet regardless.
+Message formatting logic lives in `telegram_bot.py`.
 
 ---
 
-## GitHub Secrets Required
+## Interactive Bot
 
-| Secret | Description |
-|---|---|
-| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather |
-| `TELEGRAM_CHAT_ID` | Your Telegram group chat ID (e.g. `-100123456789`) |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | Full contents of the service account `.json` key file |
-| `SPREADSHEET_ID` | ID from the Google Sheet URL (`/d/SPREADSHEET_ID/edit`) |
-| `NEWSAPI_KEY` | Free API key from [newsapi.org](https://newsapi.org) (optional) |
-| `TELEGRAM_DISABLED` | Set to `1` to pause Telegram; delete to resume |
+**Bot**: `@ChoicePRbot`  
+**URL**: `https://agentpr-production.up.railway.app`  
+**Stack**: FastAPI + uvicorn, OpenAI GPT-4o-mini, Python
 
-Manage secrets: [github.com/alexilyash-AI-pilot/AgentPR/settings/secrets/actions](https://github.com/alexilyash-AI-pilot/AgentPR/settings/secrets/actions)
+### How it works
 
----
+1. User sends a natural-language message to `@ChoicePRbot` in Telegram.
+2. The Railway server receives the webhook and routes it to the FastAPI handler.
+3. The handler passes the message to GPT-4o-mini with tool-calling enabled.
+4. The model calls one or more tools to fulfill the request.
+5. Results are returned to the user in Telegram.
 
-## Interactive Bot Commands
+### Available tools
 
-You can send commands directly in the Telegram group and the bot will search and reply — no laptop needed.
+| Tool | Description |
+|------|-------------|
+| `search_articles` | Full-text search across the Google Sheet database |
+| `send_to_group` | Sends formatted results to the Telegram group |
+| `create_sheet_tab` | Creates a new tab in the Google Sheet with query results |
 
-| Command | Description |
-|---|---|
-| `/search <query>` | Search EU articles for any topic (default: last 3 months) |
-| `/search <query> 12 months` | Search with custom timeframe |
-| `/search <query> last year` | Natural language timeframes work too |
-| `/help` | Show all commands |
-| `/status` | Show agent status and settings |
+### Bot behavior
 
-**Examples you can send in the group:**
-```
-/search deliverect 12 months
-/search AI restaurants last year
-/search sunday.app 3 months
-/search restaurant POS Europe 6 months
-/search upmenu last week
-/search Choice restaurant CRM 6 months
-```
+- **Company aliases**: Understands shorthand — "Choice" → ChoiceQR, "Sunday" → Sunday.app, etc.
+- **Multi-query**: Runs 2–3 query variations per request for better recall.
+- **Deduplication**: Deduplicates results across query variations before presenting them.
+- **Confirmation step**: Asks where to send results (Telegram group or new Sheet tab) before acting.
+- **Conversation memory**: Per-chat message history is maintained for contextual follow-ups.
+- **Concurrency lock**: Per-chat threading lock prevents concurrent request corruption.
 
-The bot checks for new commands every **15 minutes** and replies directly in the group.  
-Only EU/European articles in English are returned.
+Implementation: `bot_server.py` (webhook server) and `tools.py` (tool functions).
 
 ---
 
-## Schedule
+## Setup & Secrets
 
-Runs automatically at **00:00, 06:00, 12:00, 18:00 UTC** (every 6 hours).
+### Required GitHub Actions secrets
 
-To trigger manually: GitHub repo → **Actions** → **AgentPR Monitor** → **Run workflow**
+| Secret | Value / Description |
+|--------|---------------------|
+| `TELEGRAM_BOT_TOKEN` | Bot token for `@AiPRChoice` |
+| `TELEGRAM_CHAT_ID` | `-1003524787352` |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Full JSON of the Google service account credentials |
+| `SPREADSHEET_ID` | `1nSkFz_2kUs76LIO_mcl5x0WvhuESyRWJ4bSigOoO5UM` |
 
-To change frequency, edit `.github/workflows/monitor.yml`:
-```yaml
-- cron: "0 */6 * * *"   # every 6 hours (current)
-- cron: "0 8 * * *"      # once daily at 08:00 UTC
-- cron: "0 */3 * * *"    # every 3 hours
-```
+### Railway environment variables
 
----
+The same secrets above are required as environment variables on the Railway service, plus any additional variables needed by `bot_server.py` (e.g. `OPENAI_API_KEY`).
 
-## State Management
+### Schedule
 
-The agent tracks already-seen article URLs in `seen_urls.json` (committed to this repo after each run). This prevents duplicate notifications across runs.
-
-Only articles that pass **all filters** are saved to `seen_urls.json`. URLs filtered out (old, non-EU, non-English) are re-evaluated on the next run.
+The daily monitor runs via `.github/workflows/monitor.yml` at **07:00 UTC (09:00 CET)** every day.
 
 ---
 
-## Adding Keywords or Portals
+## File Reference
 
-Edit `sources.py`:
-
-```python
-# Add a keyword
-KEYWORD_GROUPS["competitors"].append("new competitor name")
-
-# Add a domain to monitor
-TIER2_DOMAINS.append("newportal.eu")
-
-# Add country mapping for a new domain
-DOMAIN_COUNTRY_MAP["newportal.eu"] = "Germany"
-```
-
-Commit and push — the next scheduled run picks up the changes automatically.
-
----
-
-## Project Structure
-
-```
-AgentPR/
-├── monitor.py          # Main orchestrator — fetch, filter, enrich, log, notify
-├── sources.py          # Keywords, domain lists, EU signals, country mapping
-├── sheets.py           # Google Sheets read/write via gspread
-├── telegram_bot.py     # Telegram message formatting and sending
-├── seen_urls.json      # State file — URLs already processed (auto-updated)
-├── requirements.txt    # Python dependencies
-└── .github/
-    └── workflows/
-        └── monitor.yml # GitHub Actions workflow (schedule + secrets)
-```
+| File | Purpose |
+|------|---------|
+| `monitor.py` | Main orchestrator for daily GitHub Actions runs |
+| `sources.py` | Company list, keywords, source URLs, domain tier classifications |
+| `sheets.py` | Google Sheets read/write integration |
+| `telegram_bot.py` | Telegram message formatting and delivery |
+| `tools.py` | Bot tool implementations (`search_articles`, `send_to_group`, `create_sheet_tab`) |
+| `bot_server.py` | FastAPI webhook server for the interactive bot |
+| `bot_handler.py` | Telegram update handler logic |
+| `Dockerfile` | Container image for Railway deployment |
+| `railway.json` | Railway service configuration |
+| `requirements.txt` | Python dependencies |
+| `.github/workflows/monitor.yml` | GitHub Actions cron schedule |

@@ -26,6 +26,7 @@ from bs4 import BeautifulSoup
 
 from sheets import (
     append_article,
+    flush_articles,
     get_all_articles,
     is_duplicate,
     mark_sent,
@@ -770,6 +771,10 @@ def run():
 
     new_count = len(new_articles)
     logger.info("New articles after cross-run dedup: %d", new_count)
+
+    # Flush all buffered article rows to Sheets in a single batch API call
+    if use_sheets:
+        flush_articles()
 
     # Step 4: within-run story dedup — one best-source article per story cluster
     to_send = _deduplicate_by_story(new_articles)
