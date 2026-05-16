@@ -45,5 +45,10 @@ jobs:
           git config user.name "AgentPR Bot"
           git config user.email "agentpr@users.noreply.github.com"
           git add seen_urls.json
-          git diff --cached --quiet || git commit -m "chore: update seen_urls [skip ci]"
-          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:${{ github.ref_name }}
+          if git diff --cached --quiet; then
+            echo "No changes to seen_urls.json, skipping commit"
+          else
+            git commit -m "chore: update seen_urls [skip ci]"
+            git pull --rebase https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git ${{ github.ref_name }} || true
+            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:${{ github.ref_name }}
+          fi
