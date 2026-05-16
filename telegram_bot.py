@@ -1,5 +1,6 @@
 import os
 import logging
+from email.utils import parsedate_to_datetime
 import requests
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ def send_article(article: dict) -> bool:
 
     title = article.get("title", "No title")
     portal = article.get("portal", "—")
-    pub_date = article.get("published_date", "—")
+    pub_date = _format_date(article.get("published_date", ""))
     url = article.get("url", "")
     description = article.get("description", "").strip()
 
@@ -103,6 +104,20 @@ def _format_author(article: dict) -> str:
     last = article.get("author_last", "")
     full = f"{first} {last}".strip()
     return full if full else "Unknown"
+
+
+def _format_date(date_str: str) -> str:
+    """Parse any date format and return YYYY-MM-DD for display."""
+    if not date_str:
+        return "—"
+    try:
+        return parsedate_to_datetime(date_str).strftime("%Y-%m-%d")
+    except Exception:
+        pass
+    # Already in YYYY-MM-DD
+    if len(date_str) >= 10 and date_str[4] == "-":
+        return date_str[:10]
+    return date_str[:10] if date_str else "—"
 
 
 def _escape(text: str) -> str:

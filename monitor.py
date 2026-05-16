@@ -9,6 +9,7 @@ Run order:
   4. Log summary: X new articles found, Y sent
 """
 
+import difflib
 import json
 import logging
 import os
@@ -128,7 +129,7 @@ def _portal_name_from_domain(domain: str) -> str:
 
 _COMPANY_KEYWORDS = {
     "Deliverect": ["deliverect"],
-    "Sunday": ["sunday.app", "sundayapp", "sunday app restaurant"],
+    "Sunday": ["sunday.app", "sundayapp", "sunday app qr", "sunday app payment"],
     "Flipdish": ["flipdish"],
     "StoreKit": ["storekit"],
     "UpMenu": ["upmenu"],
@@ -244,6 +245,82 @@ def _strip_html(text: str) -> str:
     return re.sub(r"<[^>]+>", "", text or "").strip()
 
 
+def _source_tier(domain: str) -> int:
+    """Return the authority tier (1=best … 4=unknown) for a given domain."""
+    for d in TIER1_DOMAINS:
+        if d in domain:
+            return 1
+    for d in TIER2_DOMAINS:
+        if d in domain:
+            return 2
+    for d in TIER3_DOMAINS:
+        if d in domain:
+            return 3
+    return 4
+
+
+def _deduplicate_by_story(articles: list[dict]) -> list[dict]:
+    """
+    Within-run story clustering: group articles that cover the same story and
+    keep only the one from the most authoritative source.
+
+    Two articles are considered the same story when either:
+      - Their titles have a SequenceMatcher ratio > 0.70, OR
+      - 3+ consecutive words from one title appear as a phrase in the other.
+
+    Within each cluster the winner is the article with the lowest tier number;
+    ties are broken by longest description.
+    """
+    def _titles_match(t1: str, t2: str) -> bool:
+        t1_l, t2_l = t1.lower(), t2.lower()
+        if difflib.SequenceMatcher(None, t1_l, t2_l).ratio() > 0.70:
+            return True
+        for words in (t1_l.split(), t2_l.split()):
+            other = t2_l if words is t1_l.split() else t1_l
+            if len(words) >= 3:
+                for i in range(len(words) - 2):
+                    if " ".join(words[i : i + 3]) in other:
+                        return True
+        return False
+
+    assigned = [False] * len(articles)
+    clusters: list[list[dict]] = []
+
+    for i, article in enumerate(articles):
+        if assigned[i]:
+            continue
+        cluster = [article]
+        assigned[i] = True
+        for j in range(i + 1, len(articles)):
+            if not assigned[j] and _titles_match(article["title"], articles[j]["title"]):
+                cluster.append(articles[j])
+                assigned[j] = True
+        clusters.append(cluster)
+
+    result = []
+    for cluster in clusters:
+        best = min(
+            cluster,
+            key=lambda a: (
+                _source_tier(a.get("_domain", "")),
+                -len(a.get("description", "")),
+            ),
+        )
+        if len(cluster) > 1:
+            dropped = [a["title"][:60] for a in cluster if a is not best]
+            logger.info(
+                "Story dedup: kept '%s' (%s tier %d), dropped %d: %s",
+                best["title"][:60],
+                best.get("_domain", ""),
+                _source_tier(best.get("_domain", "")),
+                len(dropped),
+                dropped,
+            )
+        result.append(best)
+
+    return result
+
+
 def _build_article(entry: dict, query: str = "") -> dict:
     """Normalise a feedparser entry or NewsAPI article into our internal dict."""
     url = entry.get("url") or entry.get("link", "")
@@ -279,7 +356,7 @@ def _build_article(entry: dict, query: str = "") -> dict:
         "author_email": "",
         "country": _country_for_domain(domain),
         "portal": portal,
-        "published_date": pub_date[:10] if pub_date else "",
+        "published_date": pub_date,  # keep full string; _is_after_cutoff handles all formats
         "_domain": domain,
         "_author_raw": author_raw,
     }
@@ -463,10 +540,9 @@ def run():
             len(seen_urls_local),
         )
 
-    # Step 3: filter, dedup, append, notify
+    # Step 3: filter & cross-run dedup by URL/title; collect new articles
     seen_in_run: set[str] = set()
-    new_count = 0
-    sent_count = 0
+    new_articles: list[dict] = []
 
     for article in raw:
         url = article["url"].strip()
@@ -493,9 +569,10 @@ def run():
                 continue
 
         seen_in_run.add(url)
-        new_count += 1
+        new_articles.append(article)
 
-        # Build the sheet row for this article
+        # Persist immediately as "Not Sent" — all unique articles are recorded
+        # regardless of whether they survive the within-run story dedup below.
         now_iso = datetime.utcnow().isoformat()
         companies = article.get("companies", [article.get("company", "Restaurant Tech")])
         sheet_row = {
@@ -509,26 +586,37 @@ def run():
             "status": "Not Sent",
             "first_detected_time": now_iso,
         }
-
         if use_sheets:
             append_article(sheet_row)
         else:
             seen_urls_local.add(url)
 
-        # Send Telegram notification
+    new_count = len(new_articles)
+    logger.info("New articles after cross-run dedup: %d", new_count)
+
+    # Step 4: within-run story dedup — one best-source article per story cluster
+    to_send = _deduplicate_by_story(new_articles)
+    logger.info(
+        "After story dedup: %d to send (%d suppressed as lower-authority duplicates)",
+        len(to_send),
+        new_count - len(to_send),
+    )
+
+    # Step 5: send to Telegram; mark sent only for the articles actually sent
+    sent_count = 0
+    for article in to_send:
         sent = send_article(article)
         if sent:
             sent_count += 1
             if use_sheets:
-                mark_sent(url)
-
+                mark_sent(article["url"])
         time.sleep(0.5)
 
     # Persist fallback state when Sheets is unavailable
     if not use_sheets:
         _save_seen_urls_local(seen_urls_local)
 
-    # Step 4: summary
+    # Step 6: summary
     send_summary(new_count)
     logger.info(
         "=== AgentPR run complete. %d new articles found, %d sent. ===",
