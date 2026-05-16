@@ -101,6 +101,74 @@ def _is_eu_relevant(article: dict) -> bool:
     return True
 
 
+# Phrases that indicate a listicle / directory article (restaurant guide, roundup, etc.)
+_LISTICLE_TITLE_PHRASES = [
+    "best restaurants",
+    "top restaurants",
+    "highest-rated restaurants",
+    "restaurants in ",
+    "restaurants near ",
+    "restaurants across ",
+    "restaurant guide",
+    "dining guide",
+    "where to eat",
+    "places to eat",
+]
+
+# Business-signal words — presence of any of these strongly suggests the article
+# is genuinely about the company rather than a roundup that cites it as a tool.
+_BUSINESS_SIGNALS = [
+    "funding", "raises", "raised", "acquisition", "acquires", "acquired",
+    "partners", "partnership", "launches", "launch", "new feature",
+    "integration", "integrates", "expands", "expansion", "hires", "appoints",
+    "appointed", "ceo", "cto", "coo", "series a", "series b", "series c",
+    "seed round", "investment", "valuation", "ipo", "merger", "deal",
+    "contract", "platform update", "api", "announces", "announced",
+]
+
+
+def _is_about_company(article: dict) -> bool:
+    """
+    Return False when the article is a listicle, restaurant directory, or
+    review that merely uses a tracked company as a reference tool (e.g.
+    "OpenTable names highest-rated restaurants in North Wales").
+
+    Logic:
+      1. If the title contains any listicle phrase → candidate for rejection.
+         BUT if the title/description also contains a strong business signal,
+         keep it (e.g. "OpenTable launches new restaurant awards programme").
+      2. If the title matches typical numeric-listicle patterns combined with
+         restaurant/awards language → reject.
+      3. Default: keep the article.
+    """
+    title = article.get("title", "").lower()
+    description = article.get("description", "").lower()
+    combined = f"{title} {description}"
+
+    # --- Step 1: check for listicle phrases in the title ---
+    has_listicle_phrase = any(phrase in title for phrase in _LISTICLE_TITLE_PHRASES)
+
+    # --- Step 2: check for numeric-listicle pattern + restaurant/awards ---
+    # e.g. "10 best restaurants", "50 top spots according to opentable"
+    numeric_listicle = bool(
+        re.search(r"\b\d+\s+(best|top|highest.rated)\b", title)
+        or re.search(r"\b(ranked|ranking|awards)\b.*\brestaurant", title)
+        or re.search(r"\brestaurant\b.*\b(ranked|ranking|awards)\b", title)
+    )
+
+    is_listicle = has_listicle_phrase or numeric_listicle
+
+    if not is_listicle:
+        return True  # nothing suspicious → keep
+
+    # Even if it looks like a listicle, keep it if there's a genuine business signal
+    has_business_signal = any(signal in combined for signal in _BUSINESS_SIGNALS)
+    if has_business_signal:
+        return True
+
+    return False
+
+
 def _domain_from_url(url: str) -> str:
     try:
         return urlparse(url).netloc.lstrip("www.")
@@ -553,6 +621,9 @@ def run():
             continue
         if not _is_eu_relevant(article):
             logger.debug("Skipped (not EU): %s | %s", article.get("_domain", ""), article.get("title", "")[:60])
+            continue
+        if not _is_about_company(article):
+            logger.debug("Skipped (not about company): %s", article.get("title", "")[:80])
             continue
         if url in seen_in_run:
             continue
