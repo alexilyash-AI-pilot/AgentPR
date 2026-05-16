@@ -14,6 +14,7 @@ Google Sheet?" before posting or saving anything.
 import json
 import logging
 import os
+import threading
 
 import openai
 import requests
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 CONVERSATIONS: dict[str, list] = {}   # chat_id → message history
 SEARCH_CACHE:  dict[str, dict] = {}   # chat_id → {articles, query, _seen_urls}
+CHAT_LOCKS:    dict[str, threading.Lock] = {}  # per-chat serialization lock
 MAX_HISTORY = 30
 
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "ChoicePRbot")
@@ -152,6 +154,48 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
 # Update handler
 # ---------------------------------------------------------------------------
 
+def _sanitize_history(history: list) -> list:
+    """Remove orphaned tool messages that have no matching tool_calls parent.
+
+    This prevents the OpenAI error 'tool must be a response to a preceding
+    message with a tool call' which occurs when concurrent requests corrupt
+    the conversation history.
+    """
+    result = []
+    for msg in history:
+        if msg["role"] == "tool":
+            tcid = msg.get("tool_call_id")
+            has_parent = any(
+                m["role"] == "assistant" and
+                any(tc.get("id") == tcid for tc in (m.get("tool_calls") or []))
+                for m in result
+            )
+            if not has_parent:
+                logger.warning("Dropping orphaned tool message (tool_call_id=%s)", tcid)
+                continue
+        result.append(msg)
+    # Also drop any trailing assistant message that has tool_calls but no
+    # corresponding tool results (incomplete round that got cut off).
+    while result and result[-1]["role"] == "assistant" and result[-1].get("tool_calls"):
+        logger.warning("Dropping incomplete tool_calls assistant tail")
+        result.pop()
+    return result
+
+
+def _safe_truncate(history: list, max_len: int) -> list:
+    """Truncate to max_len while never splitting a tool_calls / tool pair."""
+    if len(history) <= max_len:
+        return history
+    history = history[-max_len:]
+    # Strip any orphaned tool messages at the new head
+    while history and history[0]["role"] == "tool":
+        history = history[1:]
+    # Strip any assistant+tool_calls at the new head whose tool results were cut
+    while history and history[0]["role"] == "assistant" and history[0].get("tool_calls"):
+        history = history[1:]
+    return history
+
+
 def _handle_update(data: dict) -> None:
     msg = data.get("message") or data.get("edited_message")
     if not msg:
@@ -174,16 +218,19 @@ def _handle_update(data: dict) -> None:
 
     logger.info("[%s] %s", chat_id, text[:100])
 
-    history = CONVERSATIONS.get(chat_id, [])
-    history.append({"role": "user", "content": text})
-    if len(history) > MAX_HISTORY:
-        history = history[-MAX_HISTORY:]
+    # Serialize per-chat to prevent concurrent requests corrupting history
+    lock = CHAT_LOCKS.setdefault(chat_id, threading.Lock())
+    with lock:
+        history = CONVERSATIONS.get(chat_id, [])
+        history = _sanitize_history(history)
+        history.append({"role": "user", "content": text})
+        history = _safe_truncate(history, MAX_HISTORY)
 
-    # Reset article accumulator for this new user turn
-    SEARCH_CACHE[chat_id] = {"articles": [], "query": "", "_seen_urls": set()}
+        # Reset article accumulator for this new user turn
+        SEARCH_CACHE[chat_id] = {"articles": [], "query": "", "_seen_urls": set()}
 
-    _run_agent(history, chat_id)
-    CONVERSATIONS[chat_id] = history
+        _run_agent(history, chat_id)
+        CONVERSATIONS[chat_id] = history
 
 
 # ---------------------------------------------------------------------------
