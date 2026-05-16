@@ -603,14 +603,24 @@ def run():
     )
 
     # Step 5: send to Telegram; mark sent only for the articles actually sent
+    # Cap at 50 per run to avoid flooding on first/catch-up runs.
+    # Telegram group rate limit: ~20 messages/min → sleep 3 s between sends.
+    MAX_SEND_PER_RUN = 50
+    send_batch = to_send[:MAX_SEND_PER_RUN]
+    if len(to_send) > MAX_SEND_PER_RUN:
+        logger.info(
+            "Capping Telegram sends at %d (skipping %d lower-priority articles this run).",
+            MAX_SEND_PER_RUN, len(to_send) - MAX_SEND_PER_RUN,
+        )
+
     sent_count = 0
-    for article in to_send:
+    for article in send_batch:
         sent = send_article(article)
         if sent:
             sent_count += 1
             if use_sheets:
                 mark_sent(article["url"])
-        time.sleep(0.5)
+        time.sleep(3)  # respect Telegram group rate limit (~20 msg/min)
 
     # Persist fallback state when Sheets is unavailable
     if not use_sheets:

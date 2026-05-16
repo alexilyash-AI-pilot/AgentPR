@@ -1,5 +1,6 @@
 import os
 import logging
+import time
 from email.utils import parsedate_to_datetime
 import requests
 
@@ -62,17 +63,25 @@ def send_article(article: dict) -> bool:
         "disable_web_page_preview": False,
     }
 
-    try:
-        resp = requests.post(
-            TELEGRAM_API.format(token=token),
-            json=payload,
-            timeout=10,
-        )
-        resp.raise_for_status()
-        return True
-    except requests.RequestException as exc:
-        logger.error("Telegram send failed for '%s': %s", title, exc)
-        return False
+    for attempt in range(3):
+        try:
+            resp = requests.post(
+                TELEGRAM_API.format(token=token),
+                json=payload,
+                timeout=10,
+            )
+            if resp.status_code == 429:
+                retry_after = resp.json().get("parameters", {}).get("retry_after", 10)
+                logger.warning("Telegram rate limited — waiting %ds before retry.", retry_after)
+                time.sleep(retry_after + 1)
+                continue
+            resp.raise_for_status()
+            return True
+        except requests.RequestException as exc:
+            logger.error("Telegram send failed for '%s': %s", title, exc)
+            if attempt < 2:
+                time.sleep(5)
+    return False
 
 
 def send_summary(total_new: int) -> None:
