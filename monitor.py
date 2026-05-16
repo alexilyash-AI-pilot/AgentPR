@@ -35,6 +35,7 @@ from sheets import (
 from sources import (
     ALL_QUERIES,
     CUTOFF_DATE,
+    DELIVERY_ECOSYSTEM_COMPANIES,
     DOMAIN_COUNTRY_MAP,
     EU_SIGNALS,
     RSS_PATHS,
@@ -179,6 +180,7 @@ _LISTICLE_TITLE_PHRASES = [
 _BUSINESS_SIGNALS = [
     "funding", "raises", "raised", "acquisition", "acquires", "acquired",
     "partners", "partnership", "launches", "launch", "new feature",
+    "adds", "added", "feature", "features",
     "integration", "integrates", "expands", "expansion", "hires", "appoints",
     "appointed", "ceo", "cto", "coo", "series a", "series b", "series c",
     "seed round", "investment", "valuation", "ipo", "merger", "deal",
@@ -197,10 +199,67 @@ _RELEVANCE_BUSINESS_SIGNALS = [
     "acquisition", "acquires", "merger",
     "partner", "partnership", "integration", "integrates",
     "launch", "launches", "announced", "expands", "expansion",
+    "adds", "added", "feature", "features",
     "enterprise", "contract", "deal",
     "hire", "appoints", "ceo", "cto", "coo", "vp",
     "valuation", "ipo", "revenue", "growth", "milestone",
 ]
+
+_ORDERING_CONTEXT_SIGNALS = [
+    "qr ordering", "qr order", "qr code ordering", "table ordering",
+    "restaurant digital ordering", "digital ordering", "online ordering",
+    "first-party ordering", "first party ordering", "direct ordering",
+    "restaurant ai ordering", "voice ai ordering", "voice ordering",
+    "ai ordering", "ai drive thru", "drive-thru ai", "drive thru ai",
+    "restaurant automation", "restaurant commerce",
+    "omnichannel restaurant commerce", "omnichannel ordering",
+    "restaurant commerce infrastructure", "restaurant customer experience",
+    "menu management", "menu integration", "menu integrations",
+    "menu synchronization", "menu sync", "restaurant middleware",
+    "ordering orchestration", "restaurant operational ai",
+    "restaurant integrations", "ordering integration",
+    "delivery integration", "delivery integrations",
+    "smart restaurant technologies",
+]
+
+_DELIVERY_CONTEXT_HINTS = [
+    "restaurant ordering", "table ordering", "qr ordering",
+    "menu integration", "menu integrations", "menu synchronization",
+    "delivery integration", "delivery integrations",
+    "omnichannel ordering", "restaurant commerce",
+    "restaurant commerce infrastructure", "ordering platform",
+    "ordering integration", "digital ordering",
+]
+
+_DELIVERY_REJECT_CONTEXT_SIGNALS = [
+    "courier", "couriers", "courier operations", "driver pay",
+    "rider pay", "delivery rider", "delivery riders", "gig worker",
+    "gig workers", "logistics", "last-mile", "last mile",
+    "warehouse", "warehouses", "dark store", "dark stores",
+    "grocery delivery", "groceries", "quick commerce", "q-commerce",
+]
+
+_GENERIC_TECH_NOISE_PHRASES = [
+    "pos system", "pos systems", "point of sale system",
+    "point-of-sale system", "point of sale systems",
+    "point-of-sale systems", "cash register", "cash registers",
+    "kiosk hardware", "self-service kiosk", "self service kiosk",
+    "ordering kiosk", "kiosks", "loyalty system", "loyalty systems",
+    "loyalty program", "loyalty programmes", "loyalty programs",
+    "payment system", "payment systems", "payment terminal",
+    "payment terminals", "payments platform", "retail technology",
+    "retail technologies", "retail tech",
+]
+
+_GENERIC_TECH_NOISE_EXEMPTION_SIGNALS = [
+    "restaurant ordering integration", "ordering integration",
+    "restaurant integrations", "menu integration", "menu integrations",
+    "menu synchronization", "delivery integration", "delivery integrations",
+    "integrates with", "integrated with", "pos integration",
+    "point-of-sale integration", "point of sale integration",
+]
+
+_DELIVERY_ECOSYSTEM_COMPANY_SET = set(DELIVERY_ECOSYSTEM_COMPANIES)
 
 # Food/menu/dining noise phrases — presence in title kills relevance
 _FOOD_NOISE_PHRASES = [
@@ -306,6 +365,14 @@ _US_GEO_TITLE_SIGNALS = [
 _COMPANY_TITLE_KEYWORDS: list[str] = []  # populated after _COMPANY_KEYWORDS is defined
 
 
+def _keyword_matches(keyword: str, text: str) -> bool:
+    """Match short single-token brand names as whole words to avoid false hits."""
+    keyword = keyword.lower()
+    if re.fullmatch(r"[a-z0-9]+", keyword) and len(keyword) <= 4:
+        return bool(re.search(r"\b" + re.escape(keyword) + r"\b", text))
+    return keyword in text
+
+
 def _relevance_score(article: dict) -> int:
     """
     Score an article 0-100 for relevance.
@@ -336,7 +403,7 @@ def _relevance_score(article: dict) -> int:
         score += 40
 
     # +30: tracked company keyword in the title specifically
-    company_in_title = any(kw in title for kw in _COMPANY_TITLE_KEYWORDS)
+    company_in_title = any(_keyword_matches(kw, title) for kw in _COMPANY_TITLE_KEYWORDS)
     if company_in_title:
         score += 30
 
@@ -370,6 +437,11 @@ def _relevance_score(article: dict) -> int:
         ):
             score -= 20
 
+    # -60: generic POS/payment/kiosk/loyalty/retail tech noise unless the
+    #      strict relevance gate found a restaurant-ordering integration angle.
+    if _is_generic_tech_noise(article, _matched_tracked_companies(article)):
+        score -= 60
+
     return max(score, 0)
 
 
@@ -380,6 +452,75 @@ def _matched_tracked_companies(article: dict) -> list[str]:
         description=article.get("description", ""),
     )
     return [company for company in matches if company != "Restaurant Tech"]
+
+
+def _has_ordering_context(article: dict) -> bool:
+    """Return True when text is about restaurant ordering or commerce infrastructure."""
+    combined = f"{article.get('title', '')} {article.get('description', '')}".lower()
+    if any(signal in combined for signal in _ORDERING_CONTEXT_SIGNALS):
+        return True
+
+    has_restaurant = "restaurant" in combined or "restaurants" in combined
+    ordering_terms = [
+        "ordering", "order ahead", "online order", "digital order",
+        "menu", "integration", "commerce", "automation", "drive thru",
+        "drive-thru", "customer experience",
+    ]
+    return has_restaurant and any(term in combined for term in ordering_terms)
+
+
+def _has_delivery_ecosystem_context(article: dict) -> bool:
+    """Delivery ecosystem companies only pass with restaurant-ordering context."""
+    combined = f"{article.get('title', '')} {article.get('description', '')}".lower()
+    if any(signal in combined for signal in _DELIVERY_CONTEXT_HINTS):
+        return True
+
+    has_restaurant = "restaurant" in combined or "restaurants" in combined
+    ordering_or_integration = any(
+        term in combined
+        for term in [
+            "ordering", "order", "menu", "integration", "integrates",
+            "platform", "commerce", "qr", "table ordering",
+        ]
+    )
+    return has_restaurant and ordering_or_integration
+
+
+def _passes_delivery_ecosystem_rule(article: dict, matched_companies: list[str]) -> bool:
+    """Reject delivery company coverage unless tied to restaurant ordering."""
+    delivery_matches = [
+        company for company in matched_companies
+        if company in _DELIVERY_ECOSYSTEM_COMPANY_SET
+    ]
+    if not delivery_matches:
+        return True
+
+    combined = f"{article.get('title', '')} {article.get('description', '')}".lower()
+    has_allowed_context = _has_delivery_ecosystem_context(article)
+    if not has_allowed_context:
+        return False
+    if any(signal in combined for signal in _DELIVERY_REJECT_CONTEXT_SIGNALS):
+        return has_allowed_context and _has_ordering_context(article)
+    return True
+
+
+def _is_generic_tech_noise(article: dict, matched_companies: list[str]) -> bool:
+    """
+    Reject generic POS/payment/kiosk/loyalty/retail-tech coverage unless it is
+    clearly about restaurant ordering integrations for a tracked company.
+    """
+    combined = f"{article.get('title', '')} {article.get('description', '')}".lower()
+    if not any(phrase in combined for phrase in _GENERIC_TECH_NOISE_PHRASES):
+        return False
+
+    non_delivery_company = any(
+        company not in _DELIVERY_ECOSYSTEM_COMPANY_SET
+        for company in matched_companies
+    )
+    has_exemption = any(
+        signal in combined for signal in _GENERIC_TECH_NOISE_EXEMPTION_SIGNALS
+    )
+    return not (non_delivery_company and has_exemption and _has_ordering_context(article))
 
 
 def _is_restaurant_consumer_noise(article: dict) -> bool:
@@ -404,7 +545,7 @@ def _has_company_news_signal(article: dict, matched_companies: list[str]) -> boo
 
     for company in matched_companies:
         keywords = _COMPANY_KEYWORDS.get(company, [])
-        if any(keyword in title for keyword in keywords):
+        if any(_keyword_matches(keyword, title) for keyword in keywords):
             return True
 
     return any(signal in combined for signal in _RELEVANCE_BUSINESS_SIGNALS)
@@ -422,6 +563,10 @@ def _is_strictly_relevant_company_news(article: dict) -> bool:
     if not matched_companies:
         return False
     if _is_restaurant_consumer_noise(article):
+        return False
+    if not _passes_delivery_ecosystem_rule(article, matched_companies):
+        return False
+    if _is_generic_tech_noise(article, matched_companies):
         return False
     if not _is_eu_relevant(article):
         return False
@@ -519,6 +664,16 @@ _COMPANY_KEYWORDS = {
     "MENU TIGER": ["menutiger", "menu tiger"],
     "ChoiceQR": ["choiceqr", "choice.app", "choice restaurant", "choice crm",
                  "choice qr", "choice raises", "choice funding", "choice platform"],
+    "Olo": ["olo", "olo restaurant", "olo ordering", "olo platform"],
+    "Lunchbox": ["lunchbox restaurant", "lunchbox ordering", "lunchbox platform"],
+    "Owner.com": ["owner.com", "owner com", "owner restaurants", "owner ordering"],
+    "DoorDash": ["doordash", "door dash"],
+    "Uber Eats": ["uber eats", "ubereats"],
+    "Deliveroo": ["deliveroo"],
+    "Wolt": ["wolt"],
+    "Glovo": ["glovo"],
+    "Just Eat Takeaway": ["just eat takeaway", "just eat"],
+    "Prosus": ["prosus"],
 }
 
 # Populate the flat keyword list used by _relevance_score() for title-only matching
@@ -545,6 +700,16 @@ _AMBIGUOUS_COMPANY_CONTEXT: list[tuple[str, str, list[str]]] = [
         "otter",
         ["restaurant", "delivery"],
     ),
+    (
+        "Olo",
+        "olo",
+        ["restaurant", "ordering", "menu", "integration", "launch", "funding"],
+    ),
+    (
+        "Lunchbox",
+        "lunchbox",
+        ["restaurant", "ordering", "menu", "integration", "launch", "funding"],
+    ),
 ]
 
 
@@ -556,7 +721,7 @@ def _match_companies(title: str, description: str = "", query: str = "") -> list
     # Exact keyword matching across all three fields
     for company, keywords in _COMPANY_KEYWORDS.items():
         for kw in keywords:
-            if kw in combined:
+            if _keyword_matches(kw, combined):
                 matches.append(company)
                 break
 

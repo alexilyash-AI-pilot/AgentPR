@@ -24,6 +24,25 @@ COMPANIES = [
     "TableQR",
     "MENU TIGER",
     "ChoiceQR",
+    "Olo",
+    "Lunchbox",
+    "Owner.com",
+]
+
+PRIORITY_COMPANIES = [
+    "Olo",
+    "Lunchbox",
+    "Owner.com",
+]
+
+DELIVERY_ECOSYSTEM_COMPANIES = [
+    "DoorDash",
+    "Uber Eats",
+    "Deliveroo",
+    "Wolt",
+    "Glovo",
+    "Just Eat Takeaway",
+    "Prosus",
 ]
 
 # ---------------------------------------------------------------------------
@@ -56,6 +75,30 @@ KEYWORD_GROUPS = {
         "menutiger",
         "ChoiceQR",
         "choiceqr restaurant",
+        "Olo restaurant ordering",
+        "Lunchbox restaurant ordering",
+        "Owner.com restaurant ordering",
+        "Owner.com restaurants",
+    ],
+    "delivery_ecosystem": [
+        "DoorDash restaurant ordering",
+        "DoorDash menu integration",
+        "DoorDash ordering integration",
+        "Uber Eats restaurant ordering",
+        "Uber Eats QR ordering",
+        "Uber Eats menu integration",
+        "Deliveroo restaurant ordering",
+        "Deliveroo table ordering",
+        "Deliveroo menu integration",
+        "Wolt restaurant ordering",
+        "Wolt table ordering",
+        "Wolt menu integration",
+        "Glovo restaurant ordering",
+        "Glovo menu integration",
+        "Just Eat Takeaway restaurant ordering",
+        "Just Eat Takeaway menu integration",
+        "Prosus restaurant commerce",
+        "Prosus restaurant ordering",
     ],
     "topics": [
         "restaurant tech funding",
@@ -77,6 +120,20 @@ KEYWORD_GROUPS = {
         "restaurant management software company",
         "restaurant SaaS platform",
         "hospitality technology AI",
+        "QR ordering",
+        "table ordering",
+        "restaurant AI",
+        "voice ordering",
+        "restaurant automation",
+        "restaurant commerce",
+        "digital ordering",
+        "restaurant middleware",
+        "ordering orchestration",
+        "menu synchronization",
+        "restaurant integrations",
+        "restaurant digital transformation",
+        "AI drive thru",
+        "first-party ordering",
     ],
 }
 
@@ -309,6 +366,9 @@ EU_SIGNALS = {
     "quandoo", "tableo", "resdiary", "zenchef", "eat app", "eatapp",
     "sevenrooms", "tryotter", "tableqr", "menutiger", "menu tiger",
     "choiceqr", "choice restaurant", "choice crm", "choice.app",
+    "olo", "lunchbox", "owner.com", "owner com", "owner restaurants",
+    "doordash", "uber eats", "ubereats", "deliveroo", "wolt", "glovo",
+    "just eat takeaway", "just eat", "prosus",
 }
 
 # Cutoff date — only articles published after this date are processed

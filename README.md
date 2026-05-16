@@ -43,7 +43,7 @@ The system has two independent parts:
 
 ## Monitored Companies
 
-19 companies are tracked (competitors and industry players):
+22 core companies are tracked (competitors, priority targets, and industry players):
 
 | # | Company |
 |---|---------|
@@ -66,8 +66,15 @@ The system has two independent parts:
 | 17 | TableQR |
 | 18 | MENU TIGER |
 | 19 | ChoiceQR |
+| 20 | Olo |
+| 21 | Lunchbox |
+| 22 | Owner.com |
 
-All company names and associated keywords are defined in `sources.py`.
+Priority companies currently include Olo, Lunchbox, and Owner.com.
+
+The monitor also tracks delivery ecosystem names as a separate stricter category: DoorDash, Uber Eats, Deliveroo, Wolt, Glovo, Just Eat Takeaway, and Prosus. These names are monitored only when the article is tied to restaurant ordering, table ordering, QR ordering, menu integrations, delivery integrations, omnichannel ordering, or restaurant commerce infrastructure.
+
+All company names, delivery ecosystem names, and associated keywords are defined in `sources.py`.
 
 ---
 
@@ -95,17 +102,21 @@ Articles pass through a strict relevance policy before being saved:
    - Domain is classified as TIER1 or TIER2 in `sources.py`
    - Article body contains an EU-related keyword
 
-3. **Tracked-company match** — The article title or summary must explicitly mention at least one of the 19 monitored companies. Generic `Restaurant Tech` matches and query-only matches are rejected.
+3. **Tracked-company match** — The article title or summary must explicitly mention at least one monitored core company or delivery ecosystem company. Generic `Restaurant Tech` matches and query-only matches are rejected.
 
-4. **Company-news relevance** — The tracked company must be the subject of the article or part of a meaningful business/product update, such as funding, investment, acquisitions, partnerships, integrations, launches, AI, POS integrations, QR ordering updates, reservations platform updates, delivery management updates, loyalty/CRM, market expansion, enterprise deals, executive hires, or strategic changes.
+4. **Ordering and restaurant-commerce relevance** — The tracked company must be the subject of a meaningful business/product update in restaurant ordering or restaurant commerce. Relevant categories include QR ordering, table ordering, restaurant digital ordering, restaurant AI ordering, restaurant automation, omnichannel restaurant commerce, delivery integrations related to restaurant ordering, restaurant customer experience, menu management, restaurant middleware, ordering orchestration, restaurant operational AI, voice AI ordering for restaurants, first-party restaurant ordering, and smart restaurant technologies.
 
-5. **Consumer restaurant noise rejection** — Restaurant openings, food-writer recommendations, dining guides, food weeks, local venue lists, menu announcements, set/seasonal/tasting/holiday menus, restaurant-week deals, Super Bowl deals, open-hours stories, best/top restaurant lists, Michelin guides, restaurant reviews, hotel/spa/Disney/venue reopenings, and chef/venue-specific stories are rejected even when they contain broad restaurant keywords. Confirmed rejected examples include "White Tiger" restaurant openings, "Indian regional flavours", "Liverpool food and drink writer", "favourite venues", "new city centre restaurant", "mum's cooking", "Mile High Asian Food Week", "where to dine", and "food week".
+5. **Delivery ecosystem rule** — DoorDash, Uber Eats, Deliveroo, Wolt, Glovo, Just Eat Takeaway, and Prosus articles pass only when they are about restaurant ordering, table ordering, QR ordering, menu integrations, delivery integrations, omnichannel ordering, or restaurant commerce infrastructure. Generic delivery logistics, courier operations, warehouse/dark-store coverage, and grocery delivery unrelated to restaurants are rejected.
 
-6. **Cross-run deduplication** — Checks the Google Sheet master database:
+6. **Generic tech noise rejection** — Generic POS systems, cash registers, kiosk hardware, loyalty systems, payment systems, and retail technologies unrelated to restaurants receive strong negative scoring or are rejected. POS coverage is kept only when it is directly tied to restaurant-ordering integrations for a monitored company.
+
+7. **Consumer restaurant noise rejection** — Restaurant openings, food-writer recommendations, dining guides, food weeks, local venue lists, menu announcements, set/seasonal/tasting/holiday menus, restaurant-week deals, Super Bowl deals, open-hours stories, best/top restaurant lists, Michelin guides, restaurant reviews, hotel/spa/Disney/venue reopenings, and chef/venue-specific stories are rejected even when they contain broad restaurant keywords. Confirmed rejected examples include "White Tiger" restaurant openings, "Indian regional flavours", "Liverpool food and drink writer", "favourite venues", "new city centre restaurant", "mum's cooking", "Mile High Asian Food Week", "where to dine", and "food week".
+
+8. **Cross-run deduplication** — Checks the Google Sheet master database:
    - Exact URL match → skip
    - Title similarity > 85% (fuzzy) → skip
 
-7. **Within-run story dedup** — Among articles collected in the same run covering the same story (title similarity > 70%), only the highest-tier source is kept.
+9. **Within-run story dedup** — Among articles collected in the same run covering the same story (title similarity > 70%), only the highest-tier source is kept.
 
 ---
 
