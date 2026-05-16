@@ -23,23 +23,23 @@ def send_article(article: dict) -> bool:
         logger.error("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set.")
         return False
 
-    author = _format_author(article)
     company = article.get("company", "—")
     portal = article.get("portal", "—")
-    country = article.get("country", "—")
     pub_date = article.get("published_date", "—")
     url = article.get("url", "")
     title = article.get("title", "No title")
+    description = article.get("description", "").strip()
+    why_it_matters = article.get("why_it_matters", "Noteworthy development in the restaurant technology landscape.")
+
+    summary = description if description else "No summary available."
 
     text = (
-        f"📰 <b>{_escape(title)}</b>\n"
-        f"\n"
-        f"🔗 <a href=\"{url}\">{url}</a>\n"
-        f"🏢 About: <b>{_escape(company)}</b>\n"
-        f"✍️ Editor: {_escape(author)}\n"
-        f"🌐 Portal: {_escape(portal)}\n"
-        f"🗺 Country: {_escape(country)}\n"
-        f"📅 Published: {pub_date}"
+        f"🏢 <b>{_escape(company)}</b>\n"
+        f"📰 {_escape(title)}\n"
+        f"📅 {pub_date}\n"
+        f"📝 {_escape(summary)}\n"
+        f"💡 {_escape(why_it_matters)}\n"
+        f'🔗 <a href="{url}">{_escape(portal)}</a>'
     )
 
     payload = {

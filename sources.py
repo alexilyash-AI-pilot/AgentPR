@@ -1,43 +1,83 @@
 # Search keywords and media sources configuration
 
 # ---------------------------------------------------------------------------
+# Tracked companies
+# ---------------------------------------------------------------------------
+
+COMPANIES = [
+    "Deliverect",
+    "Sunday",
+    "Flipdish",
+    "StoreKit",
+    "UpMenu",
+    "Restimo",
+    "Restaumatic",
+    "TheFork",
+    "OpenTable",
+    "Quandoo",
+    "Tableo",
+    "ResDiary",
+    "Zenchef",
+    "Eat App",
+    "SevenRooms",
+    "Otter",
+    "TableQR",
+    "MENU TIGER",
+    "ChoiceQR",
+]
+
+# ---------------------------------------------------------------------------
 # Search keyword groups
 # ---------------------------------------------------------------------------
 
 KEYWORD_GROUPS = {
-    "own_brand": [
-        "Choice restaurant CRM",
-        "Choice app restaurant",
-        "choice.app",
-        "Czech Choice restaurant",
-    ],
-    "competitors": [
-        "Sunday.app restaurant",
+    "company_direct": [
         "Deliverect",
-        "Restimo restaurant",
+        "Sunday app restaurant",
+        "sundayapp restaurant",
+        "Flipdish",
+        "StoreKit restaurant",
+        "UpMenu restaurant",
+        "Restimo",
         "Restaumatic",
-        "Upmenu restaurant",
-        "restaurant loyalty platform",
-        "restaurant CRM software",
-        "restaurant POS system",
-        "restaurant ordering system",
-        "restaurant guest management",
+        "TheFork restaurant",
+        "OpenTable restaurant",
+        "Quandoo restaurant",
+        "Tableo restaurant",
+        "ResDiary",
+        "Zenchef",
+        "Eat App restaurant",
+        "eatapp restaurant",
+        "SevenRooms",
+        "Otter restaurant delivery",
+        "tryotter restaurant",
+        "TableQR",
+        "MENU TIGER restaurant",
+        "menutiger",
+        "ChoiceQR",
+        "choiceqr restaurant",
     ],
-    "ai_topic": [
-        "AI restaurant",
-        "artificial intelligence restaurant",
-        "restaurant technology startup",
-        "restaurant automation AI",
-        "restaurant digitalization",
-        "restaurant SaaS platform",
-        "foodtech AI",
-        "hospitality technology AI",
-    ],
-    "funding": [
-        "restaurant startup funding",
+    "topics": [
+        "restaurant tech funding",
         "foodtech startup investment",
         "restaurant tech Series A",
         "restaurant tech seed round",
+        "foodtech acquisition",
+        "restaurant software partnership",
+        "AI restaurant features",
+        "restaurant POS integration",
+        "QR ordering restaurant",
+        "restaurant reservations platform",
+        "delivery management restaurant",
+        "restaurant loyalty CRM",
+        "hospitality tech startup",
+        "restaurant enterprise deal",
+        "restaurant tech product launch",
+        "restaurant tech expansion",
+        "restaurant management software",
+        "restaurant digitalization",
+        "restaurant SaaS platform",
+        "hospitality technology AI",
     ],
 }
 
@@ -45,48 +85,45 @@ KEYWORD_GROUPS = {
 ALL_QUERIES = [q for group in KEYWORD_GROUPS.values() for q in group]
 
 # ---------------------------------------------------------------------------
-# Tier 1 — European & international English-language media
-# (US-only outlets removed; remaining ones cover European topics in English)
+# Tier 1 — Major international media (primary sources)
 # ---------------------------------------------------------------------------
 
 TIER1_DOMAINS = [
-    "pathfounders.com",
+    # Global tech & business
+    "techcrunch.com",
+    "bloomberg.com",
+    "reuters.com",
+    "forbes.com",
+    "cnbc.com",
+    "ft.com",
+    "businessinsider.com",
+    "fortune.com",
+    "wired.com",
+    "fastcompany.com",
+    "theverge.com",
+    "economist.com",
+    "wsj.com",
+    "washingtonpost.com",
+    "nytimes.com",
+    "newsweek.com",
+    "observer.com",
+    # European media
     "sifted.eu",
     "euronews.com",
-    "ft.com",
-    "theguardian.com",
-    "bloomberg.com",
     "euractiv.com",
-    "thetimes.co.uk",
-    "wired.com",
+    "theguardian.com",
     "dailymail.co.uk",
-    "reuters.com",
-    "economist.com",
-    "theobserver.co.uk",
+    "thetimes.co.uk",
     "politico.com",
     "cybernews.com",
 ]
 
-# Domains known to publish US-centric content — excluded from all results
-US_ONLY_DOMAINS = {
-    "techcrunch.com",
-    "washingtonpost.com",
-    "nytimes.com",
-    "wsj.com",
-    "axios.com",
-    "morningbrew.com",
-    "cnbc.com",
-    "newsweek.com",
-    "businessinsider.com",
-    "fastcompany.com",
-    "fortune.com",
-    "theverge.com",
-    "forbes.com",
-}
+# Domains known to publish US-centric content — kept minimal since we now
+# want articles about tracked companies regardless of geography
+US_ONLY_DOMAINS: set = set()
 
 # ---------------------------------------------------------------------------
-# Tier 2 — European startup / tech portals
-# Try common RSS paths; fall back to Google News RSS site: query
+# Tier 2 — Startup / tech ecosystem portals
 # ---------------------------------------------------------------------------
 
 TIER2_DOMAINS = [
@@ -99,17 +136,21 @@ TIER2_DOMAINS = [
     "techfundingnews.com",
     "dispatcheseurope.com",
     "siliconcanals.com",
-    "startupreporter.eu",
+    "crunchbase.com",
     "news.crunchbase.com",
+    "morningbrew.com",
+    "itlogs.com",
+    # Additional ecosystem portals
+    "startupreporter.eu",
     "pitchbook.com",
     "thenextweb.com",
-    "itlogs.com",
     "restauranttechnologynews.com",
     "thesaasnews.com",
     # UK startup / tech
     "uktech.news",
     "techround.co.uk",
     "startups.co.uk",
+    "pathfounders.com",
     # Hospitality & foodtech trade press
     "thecaterer.com",
     "foodnavigator.com",
@@ -142,7 +183,6 @@ TIER3_DOMAINS = [
     "start-up.ro",
     "friss-hirek.hu",
     "er10.kz",
-    # Additional CEE / regional portals
     "www.innowacje.newseria.pl",
     "czechcrunch.cz",
     "lupa.cz",
@@ -187,11 +227,23 @@ DOMAIN_COUNTRY_MAP = {
     "dispatcheseurope.com": "Europe",
     "startupreporter.eu": "Europe",
     "techcrunch.com": "USA",
-    "reuters.com": "USA",
-    "bloomberg.com": "USA",
+    "reuters.com": "International",
+    "bloomberg.com": "International",
     "wsj.com": "USA",
     "nytimes.com": "USA",
     "washingtonpost.com": "USA",
+    "forbes.com": "USA",
+    "cnbc.com": "USA",
+    "businessinsider.com": "USA",
+    "fortune.com": "USA",
+    "wired.com": "USA",
+    "fastcompany.com": "USA",
+    "theverge.com": "USA",
+    "newsweek.com": "USA",
+    "observer.com": "USA",
+    "morningbrew.com": "USA",
+    "crunchbase.com": "USA",
+    "news.crunchbase.com": "USA",
     "ft.com": "UK",
     "theguardian.com": "UK",
     "thetimes.co.uk": "UK",
@@ -220,6 +272,18 @@ DOMAIN_COUNTRY_MAP = {
     "forbes.sk": "Slovakia",
     "startitup.sk": "Slovakia",
     "businessinsider.com.pl": "Poland",
+    "politico.com": "International",
+    "euronews.com": "Europe",
+    "euractiv.com": "Europe",
+    "economist.com": "UK",
+    "vestbee.com": "Europe",
+    "itkey.media": "Europe",
+    "techfundingnews.com": "International",
+    "pitchbook.com": "USA",
+    "thenextweb.com": "Netherlands",
+    "restauranttechnologynews.com": "UK",
+    "thesaasnews.com": "International",
+    "pathfounders.com": "International",
 }
 
 # ---------------------------------------------------------------------------
@@ -240,10 +304,13 @@ EU_SIGNALS = {
     "london", "paris", "berlin", "amsterdam", "madrid", "rome", "warsaw",
     "prague", "budapest", "bucharest", "stockholm", "copenhagen", "dublin",
     "brussels", "vienna", "zurich", "lisbon", "milan", "barcelona",
-    # Tracked companies (always EU-relevant by definition)
-    "deliverect", "restimo", "restaumatic", "upmenu", "sunday.app",
-    "choice restaurant", "choice crm", "choice.app", "choiceqr", "choiceqr.com",
+    # All tracked companies (always relevant by definition)
+    "deliverect", "sunday.app", "sundayapp", "flipdish", "storekit",
+    "upmenu", "restimo", "restaumatic", "thefork", "opentable",
+    "quandoo", "tableo", "resdiary", "zenchef", "eat app", "eatapp",
+    "sevenrooms", "tryotter", "tableqr", "menutiger", "menu tiger",
+    "choiceqr", "choice restaurant", "choice crm", "choice.app",
 }
 
 # Cutoff date — only articles published after this date are processed
-CUTOFF_DATE = "2026-05-01"
+CUTOFF_DATE = "2026-01-01"

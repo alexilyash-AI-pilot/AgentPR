@@ -100,17 +100,6 @@ def _is_eu_relevant(article: dict) -> bool:
     return True
 
 
-def _is_english_title(title: str) -> bool:
-    """
-    Returns False if the title contains non-Latin script characters
-    (Cyrillic, Arabic, CJK, etc.) indicating a non-English article.
-    """
-    if not title:
-        return False
-    non_latin = sum(1 for c in title if ord(c) > 0x024F)
-    return non_latin / max(len(title), 1) < 0.2
-
-
 def _domain_from_url(url: str) -> str:
     try:
         return urlparse(url).netloc.lstrip("www.")
@@ -138,27 +127,67 @@ def _portal_name_from_domain(domain: str) -> str:
     return name.replace("-", " ").title()
 
 
+_COMPANY_KEYWORDS = {
+    "Deliverect": ["deliverect"],
+    "Sunday": ["sunday.app", "sundayapp", "sunday app restaurant"],
+    "Flipdish": ["flipdish"],
+    "StoreKit": ["storekit"],
+    "UpMenu": ["upmenu"],
+    "Restimo": ["restimo"],
+    "Restaumatic": ["restaumatic"],
+    "TheFork": ["thefork", "the fork restaurant"],
+    "OpenTable": ["opentable"],
+    "Quandoo": ["quandoo"],
+    "Tableo": ["tableo"],
+    "ResDiary": ["resdiary"],
+    "Zenchef": ["zenchef"],
+    "Eat App": ["eat app", "eatapp"],
+    "SevenRooms": ["sevenrooms"],
+    "Otter": ["tryotter", "otter restaurant"],
+    "TableQR": ["tableqr"],
+    "MENU TIGER": ["menutiger", "menu tiger"],
+    "ChoiceQR": ["choiceqr", "choice.app", "choice restaurant", "choice crm"],
+}
+
+
 def _match_company(text: str) -> str:
     """Return the most prominently mentioned tracked company name."""
     text_lower = text.lower()
-    company_keywords = {
-        "Choice": ["choice restaurant", "choice crm", "choice.app", "czech choice"],
-        "Sunday.app": ["sunday.app", "sunday app"],
-        "Deliverect": ["deliverect"],
-        "Restimo": ["restimo"],
-        "Restaumatic": ["restaumatic"],
-        "Upmenu": ["upmenu"],
-        "General AI/Restaurant Tech": [
-            "ai restaurant", "restaurant ai", "foodtech", "restaurant tech",
-            "restaurant automation", "restaurant digitali", "restaurant saas",
-            "restaurant crm", "restaurant pos",
-        ],
-    }
-    for company, keywords in company_keywords.items():
+    for company, keywords in _COMPANY_KEYWORDS.items():
         for kw in keywords:
             if kw in text_lower:
                 return company
     return "Restaurant Tech"
+
+
+def _why_it_matters(article: dict) -> str:
+    """Derive a one-sentence strategic insight from the article content."""
+    text = f"{article.get('title', '')} {article.get('description', '')}".lower()
+    if any(w in text for w in ["funding", "series a", "series b", "series c", "seed round", "raised", "investment", "investor", "venture"]):
+        return "Signals new investment activity in the restaurant tech space."
+    if any(w in text for w in ["acqui", "merger", "bought", "purchase", "takeover"]):
+        return "Indicates consolidation in the restaurant technology market."
+    if any(w in text for w in ["partnership", "partner", "integration", "integrates", "integrating"]):
+        return "Suggests strategic partnership or product integration expanding market reach."
+    if any(w in text for w in ["artificial intelligence", "machine learning", "llm", "generative ai", " ai "]):
+        return "Highlights AI adoption and innovation trends in the hospitality sector."
+    if any(w in text for w in ["pos integration", "point of sale"]):
+        return "Signals product expansion through new POS integrations."
+    if any(w in text for w in ["qr order", "qr menu", "qr code"]):
+        return "Shows growth in contactless QR ordering and menu technology."
+    if any(w in text for w in ["reservation", "booking", "table management"]):
+        return "Indicates competition in the restaurant reservations and table management space."
+    if any(w in text for w in ["delivery", "takeaway", "takeout"]):
+        return "Highlights delivery management feature development and market activity."
+    if any(w in text for w in ["loyalty", "crm", "guest retention", "guest data"]):
+        return "Signals focus on guest retention and loyalty technology."
+    if any(w in text for w in ["launch", "new product", "feature release", "announced"]):
+        return "Indicates new product innovation in hospitality tech."
+    if any(w in text for w in ["expansion", "enterprise", "new market", "international"]):
+        return "Suggests market expansion or enterprise growth strategy."
+    if any(w in text for w in ["ceo", "cto", "coo", "hire", "appoint", "executive", "joins"]):
+        return "Strategic executive change may signal a new company direction."
+    return "Noteworthy development in the restaurant technology landscape."
 
 
 def _scrape_author_from_url(url: str) -> Optional[str]:
@@ -214,6 +243,11 @@ def _scrape_author_from_url(url: str) -> Optional[str]:
     return None
 
 
+def _strip_html(text: str) -> str:
+    """Remove HTML tags from a string."""
+    return re.sub(r"<[^>]+>", "", text or "").strip()
+
+
 def _build_article(entry: dict, query: str = "") -> dict:
     """Normalise a feedparser entry or NewsAPI article into our internal dict."""
     url = entry.get("url") or entry.get("link", "")
@@ -226,6 +260,10 @@ def _build_article(entry: dict, query: str = "") -> dict:
     else:
         portal = str(source)
 
+    # Capture description/summary for richer notifications
+    raw_desc = entry.get("description") or entry.get("summary") or ""
+    description = _strip_html(raw_desc)[:300]
+
     domain = _domain_from_url(url)
     if not portal:
         portal = _portal_name_from_domain(domain)
@@ -235,9 +273,10 @@ def _build_article(entry: dict, query: str = "") -> dict:
 
     author_first, author_last = split_author_name(author_raw)
 
-    return {
+    article = {
         "title": title,
         "url": url,
+        "description": description,
         "company": company,
         "author_first": author_first,
         "author_last": author_last,
@@ -248,6 +287,8 @@ def _build_article(entry: dict, query: str = "") -> dict:
         "_domain": domain,
         "_author_raw": author_raw,
     }
+    article["why_it_matters"] = _why_it_matters(article)
+    return article
 
 
 # ---------------------------------------------------------------------------
@@ -271,6 +312,7 @@ def fetch_google_news_rss(queries: list[str]) -> list[dict]:
                         "link": entry.get("link", ""),
                         "published": entry.get("published", ""),
                         "author": entry.get("author", ""),
+                        "description": entry.get("summary", ""),
                         "source": {"name": entry.get("source", {}).get("title", "")},
                     },
                     query=query,
@@ -306,7 +348,6 @@ def fetch_newsapi(queries: list[str], domains: list[str]) -> list[dict]:
                 "sortBy": "publishedAt",
                 "pageSize": 50,
                 "apiKey": api_key,
-                "language": "en",
             }
             try:
                 resp = requests.get(endpoint, params=params, timeout=10)
@@ -361,6 +402,7 @@ def fetch_direct_rss(domains: list[str]) -> list[dict]:
                         "link": entry.get("link", ""),
                         "published": entry.get("published", ""),
                         "author": entry.get("author", ""),
+                        "description": entry.get("summary", ""),
                         "source": {"name": feed.feed.get("title", domain)},
                     }
                 )
@@ -462,13 +504,10 @@ def run():
         if not _is_eu_relevant(article):
             logger.debug("Skipped (not EU): %s | %s", article.get("_domain", ""), article.get("title", "")[:60])
             continue
-        if not _is_english_title(article.get("title", "")):
-            logger.debug("Skipped (non-English): %s", article.get("title", "")[:60])
-            continue
         seen_in_run.add(url)
         new_articles.append(article)
 
-    logger.info("New articles after dedup + date + EU + language filter: %d", len(new_articles))
+    logger.info("New articles after dedup + date + EU relevance filter: %d", len(new_articles))
 
     # Step 4: enrich missing authors via page scraping
     new_articles = enrich_authors(new_articles)
