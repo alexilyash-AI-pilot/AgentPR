@@ -1,155 +1,203 @@
-# AgentPR — Restaurant Tech News Monitor
+# AgentPR — EU Restaurant Tech News Monitor
 
-Automatically scans ~60 European and global media portals every 6 hours for articles about AI in restaurants, your brand (Choice), and competitors (Deliverect, Sunday.app, Restimo, Restaumatic, Upmenu, and more).
+Automatically scans ~50 European and English-language media portals **every 6 hours** for articles about AI in restaurants, Choice (your brand), and key competitors.
 
-- New articles are logged to a Google Sheet
-- Telegram notifications are sent to your group with article link, author, and portal
-- Runs entirely on GitHub Actions — no server or laptop needed
-
----
-
-## Setup (one-time, ~20 minutes)
-
-### Step 1 — Create a Telegram Bot
-
-1. Open Telegram and search for **@BotFather**
-2. Send `/newbot` and follow the prompts (give it a name like "AgentPR Bot")
-3. Copy the **Bot Token** (looks like `7123456789:AAFxxxxxx`)
-4. Add your bot to the Telegram group where you want notifications
-5. Send any message in the group, then open this URL in your browser (replace TOKEN):
-   ```
-   https://api.telegram.org/botTOKEN/getUpdates
-   ```
-6. Find `"chat":{"id":` in the response — that number is your **Chat ID** (may be negative for groups, e.g. `-1001234567890`)
+Results are logged to a Google Sheet and sent as Telegram notifications.  
+Runs entirely on **GitHub Actions** — no server or laptop needed.
 
 ---
 
-### Step 2 — Create a Google Sheet
+## What the Agent Does
 
-1. Go to [sheets.google.com](https://sheets.google.com) and create a new blank spreadsheet
-2. Name it **AgentPR Articles**
-3. Copy the **Spreadsheet ID** from the URL:
-   ```
-   https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit
-   ```
-   (the long string between `/d/` and `/edit`)
+Every 6 hours the agent:
 
----
+1. **Fetches** articles from three sources:
+   - Google News RSS (all keyword groups, EU geo-targeted)
+   - NewsAPI (European + international English-language outlets)
+   - Direct RSS feeds (Tier 2 & Tier 3 EU portals)
 
-### Step 3 — Set up Google Cloud Service Account
+2. **Filters** — an article passes only if ALL four conditions are met:
+   - **Language:** English (titles with non-Latin script are dropped)
+   - **Geography:** Published by a European/EU outlet OR title explicitly mentions a European country, city, or one of your tracked companies
+   - **Date:** Published on or after **1 May 2026** (articles with unknown dates are excluded)
+   - **Deduplication:** URL has not been seen in any previous run
 
-1. Go to [console.cloud.google.com](https://console.cloud.google.com)
-2. Create a new project (or use an existing one)
-3. Enable **Google Sheets API** and **Google Drive API**:
-   - APIs & Services → Enable APIs → search "Google Sheets API" → Enable
-   - Repeat for "Google Drive API"
-4. Create a Service Account:
-   - IAM & Admin → Service Accounts → Create Service Account
-   - Name: `agentpr-bot`, click Create
-   - Skip role assignment, click Done
-5. Create a JSON key:
-   - Click the service account → Keys tab → Add Key → Create new key → JSON
-   - Download the `.json` file — keep it safe, never commit it to git
-6. Share your Google Sheet with the service account email:
-   - Open your spreadsheet → Share → paste the service account email (ends in `@...iam.gserviceaccount.com`) → Editor role
+3. **Enriches** — for articles with no author in the feed, the agent scrapes the article page for a byline
+
+4. **Logs** every new article to the **Google Sheet** (AgentPR Articles)
+
+5. **Notifies** your Telegram group with article title, link, author, portal, country, and company matched
 
 ---
 
-### Step 4 — Get a NewsAPI Key (free)
+## Monitored Topics
 
-1. Go to [newsapi.org](https://newsapi.org) and sign up
-2. Copy your **API Key** from the dashboard
+### Your Brand
+- Choice restaurant CRM / choice.app / Czech Choice restaurant
+
+### Competitors
+| Company | Keywords tracked |
+|---|---|
+| Sunday.app | sunday.app, sunday app |
+| Deliverect | deliverect |
+| Restimo | restimo |
+| Restaumatic | restaumatic |
+| Upmenu | upmenu |
+
+### AI & Restaurant Tech Topics
+- AI restaurant, restaurant automation, foodtech AI
+- Restaurant technology startup, restaurant SaaS platform
+- Restaurant digitalization, restaurant CRM, restaurant POS
+- Restaurant startup funding, foodtech investment, Series A/seed
 
 ---
 
-### Step 5 — Push to GitHub
+## Monitored Sources
 
-```bash
-cd /Users/alex/Desktop/AgentPR
-git add .
-git commit -m "Initial AgentPR setup"
-# Create a new repo on github.com first, then:
-git remote add origin https://github.com/YOUR_USERNAME/agentpr.git
-git push -u origin main
+### Tier 1 — European & international English-language outlets
+Sifted, FT, The Guardian, Bloomberg, Reuters, Euronews, Euractiv,
+Politico, The Times, The Economist, Wired, Daily Mail, Cybernews,
+Pathfounders
+
+> **US-only outlets are excluded** (TechCrunch, NYT, WSJ, Forbes, Axios, Fortune, CNBC, Business Insider, The Verge, etc.)  
+> International outlets (Reuters, Bloomberg) only pass if the article title contains a European signal.
+
+### Tier 2 — European startup & tech portals
+EU-Startups, Sifted, tech.eu, Silicon Canals, The Recursive, ITKey.media,
+TechFundingNews, Dispatches Europe, Maddyness, Vestbee, Startup Reporter,
+Crunchbase News, The Next Web, The SaaS News, Restaurant Technology News
+
+### Tier 3 — Regional portals
+Startup Rise (UK), Forbes Hungary, Netokracija (Croatia), Bebeez (Italy),
+Technews180, Start-up.ro, Friss Hírek (Hungary)
+
+---
+
+## EU Relevance Filter Logic
+
+An article is considered **EU-relevant** if any of the following is true:
+
+1. **Domain is EU-specific** — e.g., `.eu`, `sifted.eu`, `euractiv.com`, `maddyness.com`, `siliconcanals.com`, `therecursive.com`, `cybernews.com`, etc.
+2. **Title mentions a European country** — France, Germany, UK, Netherlands, Poland, Czech Republic, Spain, Italy, Sweden, etc.
+3. **Title mentions a European city** — London, Paris, Berlin, Amsterdam, Prague, Warsaw, Dublin, Brussels, etc.
+4. **Title mentions a tracked company** — Deliverect, Restimo, Restaumatic, Upmenu, Sunday.app, Choice restaurant
+
+---
+
+## Google Sheet Columns
+
+Sheet: **AgentPR Articles** → tab: `Sheet1`
+
+| Column | Description |
+|---|---|
+| Article Name | Headline of the article |
+| Article Link | Full URL |
+| Company | Tracked company/topic matched (Choice, Deliverect, etc.) |
+| Editor Name | Author first name |
+| Editor Surname | Author last name |
+| Editor Email | Blank (can be enriched manually or via Hunter.io) |
+| Country | Country of the publication outlet |
+| Portal Name | Name of the media portal |
+| Date Published | When the article was published (YYYY-MM-DD) |
+| Date Found | Date the agent discovered it |
+
+---
+
+## Telegram Notifications
+
+Each new article triggers a message like:
+
+```
+📰 [Article title]
+
+🔗 https://...
+🏢 About: Deliverect
+✍️ Editor: Jane Smith
+🌐 Portal: EU Startups
+🗺 Country: Europe
+📅 Published: 2026-05-12
 ```
 
----
+### Pausing / resuming Telegram
 
-### Step 6 — Add GitHub Actions Secrets
+To **pause** notifications:  
+→ Go to [Settings → Secrets](https://github.com/alexilyash-AI-pilot/AgentPR/settings/secrets/actions) → add secret `TELEGRAM_DISABLED` = `1`
 
-In your GitHub repository go to **Settings → Secrets and variables → Actions → New repository secret** and add these 5 secrets:
+To **resume** notifications:  
+→ Delete the `TELEGRAM_DISABLED` secret
 
-| Secret Name                    | Value                                          |
-|-------------------------------|------------------------------------------------|
-| `TELEGRAM_BOT_TOKEN`           | Your bot token from BotFather                  |
-| `TELEGRAM_CHAT_ID`             | Your group chat ID (e.g. `-1001234567890`)     |
-| `GOOGLE_SERVICE_ACCOUNT_JSON`  | Paste the **entire contents** of the JSON file |
-| `SPREADSHEET_ID`               | The ID from your Google Sheet URL              |
-| `NEWSAPI_KEY`                  | Your NewsAPI key                               |
+The agent continues collecting to the Google Sheet regardless.
 
 ---
 
-### Step 7 — Run Manually to Test
+## GitHub Secrets Required
 
-Go to your GitHub repo → **Actions** tab → **AgentPR Monitor** → **Run workflow**
+| Secret | Description |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather |
+| `TELEGRAM_CHAT_ID` | Your Telegram group chat ID (e.g. `-100123456789`) |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Full contents of the service account `.json` key file |
+| `SPREADSHEET_ID` | ID from the Google Sheet URL (`/d/SPREADSHEET_ID/edit`) |
+| `NEWSAPI_KEY` | Free API key from [newsapi.org](https://newsapi.org) (optional) |
+| `TELEGRAM_DISABLED` | Set to `1` to pause Telegram; delete to resume |
 
-Check:
-- GitHub Actions logs for errors
-- Your Telegram group for test notifications
-- Your Google Sheet for new rows
+Manage secrets: [github.com/alexilyash-AI-pilot/AgentPR/settings/secrets/actions](https://github.com/alexilyash-AI-pilot/AgentPR/settings/secrets/actions)
 
 ---
 
 ## Schedule
 
-The agent runs automatically every 6 hours (00:00, 06:00, 12:00, 18:00 UTC).
+Runs automatically at **00:00, 06:00, 12:00, 18:00 UTC** (every 6 hours).
+
+To trigger manually: GitHub repo → **Actions** → **AgentPR Monitor** → **Run workflow**
 
 To change frequency, edit `.github/workflows/monitor.yml`:
 ```yaml
-- cron: "0 */6 * * *"   # every 6 hours
+- cron: "0 */6 * * *"   # every 6 hours (current)
 - cron: "0 8 * * *"      # once daily at 08:00 UTC
 - cron: "0 */3 * * *"    # every 3 hours
 ```
 
 ---
 
-## What Gets Monitored
+## State Management
 
-**Your brand:** Choice restaurant CRM, choice.app
+The agent tracks already-seen article URLs in `seen_urls.json` (committed to this repo after each run). This prevents duplicate notifications across runs.
 
-**Competitors:** Sunday.app, Deliverect, Restimo, Restaumatic, Upmenu
-
-**Topics:** AI restaurant, restaurant technology, foodtech, restaurant SaaS, restaurant automation, restaurant digitalization
-
-**Sources (~60 portals):**
-- Major international: TechCrunch, Forbes, Bloomberg, Reuters, FT, Guardian, Wired, CNBC, Politico, The Verge, Axios, and more
-- European startup: EU-Startups, Sifted, tech.eu, Silicon Canals, The Recursive, ITKey.media, TechFundingNews, Dispatches Europe, and more
-- Regional: forbes.hu, netokracija.com, start-up.ro, startuprise.co.uk, bebeez.eu, and more
+Only articles that pass **all filters** are saved to `seen_urls.json`. URLs filtered out (old, non-EU, non-English) are re-evaluated on the next run.
 
 ---
 
-## Google Sheet Columns
-
-| Column         | Description                              |
-|---------------|------------------------------------------|
-| Article Name   | Headline of the article                  |
-| Article Link   | Full URL                                 |
-| Company        | Which tracked company it's about         |
-| Editor Name    | Author first name (scraped from byline)  |
-| Editor Surname | Author last name                         |
-| Editor Email   | Left blank (can add Hunter.io later)     |
-| Country        | Country of the publication               |
-| Portal Name    | Name of the media outlet                 |
-| Date Published | When the article was published           |
-| Date Found     | When the agent found it                  |
-
----
-
-## Adding More Keywords or Portals
+## Adding Keywords or Portals
 
 Edit `sources.py`:
-- Add keywords to `KEYWORD_GROUPS`
-- Add domains to `TIER1_DOMAINS`, `TIER2_DOMAINS`, or `TIER3_DOMAINS`
-- Add country mappings to `DOMAIN_COUNTRY_MAP`
 
-Commit and push — the next run picks up the changes automatically.
+```python
+# Add a keyword
+KEYWORD_GROUPS["competitors"].append("new competitor name")
+
+# Add a domain to monitor
+TIER2_DOMAINS.append("newportal.eu")
+
+# Add country mapping for a new domain
+DOMAIN_COUNTRY_MAP["newportal.eu"] = "Germany"
+```
+
+Commit and push — the next scheduled run picks up the changes automatically.
+
+---
+
+## Project Structure
+
+```
+AgentPR/
+├── monitor.py          # Main orchestrator — fetch, filter, enrich, log, notify
+├── sources.py          # Keywords, domain lists, EU signals, country mapping
+├── sheets.py           # Google Sheets read/write via gspread
+├── telegram_bot.py     # Telegram message formatting and sending
+├── seen_urls.json      # State file — URLs already processed (auto-updated)
+├── requirements.txt    # Python dependencies
+└── .github/
+    └── workflows/
+        └── monitor.yml # GitHub Actions workflow (schedule + secrets)
+```
