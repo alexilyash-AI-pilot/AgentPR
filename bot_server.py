@@ -129,7 +129,7 @@ def _run_agent(history: list, chat_id: str) -> None:
     for round_num in range(6):
         try:
             response = client.messages.create(
-                model="claude-haiku-3-5",
+                model="claude-3-5-haiku-20241022",
                 max_tokens=1024,
                 system=SYSTEM_PROMPT,
                 messages=history,
