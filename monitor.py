@@ -221,7 +221,8 @@ _ORDERING_CONTEXT_SIGNALS = [
     "delivery integration", "delivery integrations",
     "smart restaurant technologies", "restaurant reservation",
     "restaurant reservations", "table reservation", "table reservations",
-    "table booking", "book a table", "reserve a table",
+    "reservation platform", "reservations platform", "enters reservations",
+    "restaurant booking", "table booking", "book a table", "reserve a table",
 ]
 
 _DELIVERY_CONTEXT_HINTS = [
@@ -232,8 +233,9 @@ _DELIVERY_CONTEXT_HINTS = [
     "restaurant commerce infrastructure", "ordering platform",
     "ordering integration", "digital ordering", "food delivery",
     "restaurant reservation", "restaurant reservations", "table reservation",
-    "table reservations", "reservation feature", "table booking",
-    "book a table", "reserve a table",
+    "table reservations", "reservation feature", "reservation platform",
+    "reservations platform", "enters reservations", "restaurant booking",
+    "table booking", "book a table", "reserve a table",
 ]
 
 _DELIVERY_REJECT_CONTEXT_SIGNALS = [
