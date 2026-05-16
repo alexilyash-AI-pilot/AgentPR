@@ -88,16 +88,75 @@ def _is_after_cutoff(date_str: Optional[str]) -> bool:
     return dt >= CUTOFF_DT
 
 
+# European ccTLDs — any domain ending with one of these is considered EU-relevant
+_EU_TLDS = {
+    "co.uk", "eu", "de", "fr", "pl", "cz", "sk", "hu", "ro", "hr",
+    "at", "be", "nl", "dk", "se", "fi", "no", "pt", "es", "it",
+    "lt", "lv", "ee", "si", "bg", "gr", "ie", "lu", "mt",
+}
+
+# Phrases that indicate the article is exclusively about the US market
+_US_ONLY_SIGNALS = [
+    " in the us",
+    " across the us",
+    "united states restaurant",
+    "american restaurant tech",
+    "in north america",
+]
+
+
 def _is_eu_relevant(article: dict) -> bool:
     """
-    Returns True if the article is relevant to the EU/European market.
-    Hard-blocks known US-only domains. Google News RSS is geo-targeted to
-    GB/EU (gl=GB), so anything not from a US-only domain is considered relevant.
+    Returns True if the article has a meaningful European connection.
+
+    Always KEEP when any positive signal is found:
+      1. Domain has a European ccTLD (co.uk, de, fr, eu, …)
+      2. Domain is in TIER1_DOMAINS or TIER2_DOMAINS (curated trusted sources)
+      3. Title/description contains a European city, country, or EU bloc keyword
+      4. Title/description mentions any of the 19 tracked companies
+         (EU_SIGNALS in sources.py covers both 3 and 4)
+
+    Always REJECT when no positive signal exists AND a US-only phrase is present,
+    or when the domain is in US_ONLY_DOMAINS.
+
+    Default: KEEP — don't over-filter; Google News geo-targeting already helps.
     """
     domain = article.get("_domain", "")
+    title = article.get("title", "").lower()
+    description = article.get("description", "").lower()
+    combined = f"{title} {description}"
+
+    # --- Positive signals: definitely European → keep immediately ---
+
+    # 1. European ccTLD
+    for tld in _EU_TLDS:
+        if domain.endswith(f".{tld}"):
+            return True
+
+    # 2. Curated trusted domain
+    for d in TIER1_DOMAINS:
+        if d in domain:
+            return True
+    for d in TIER2_DOMAINS:
+        if d in domain:
+            return True
+
+    # 3 & 4. EU city / country / company keyword in text
+    if any(signal in combined for signal in EU_SIGNALS):
+        return True
+
+    # --- Negative signals (only reached when no positive signal found above) ---
+
+    # US-only domain
     for us_domain in US_ONLY_DOMAINS:
         if us_domain in domain:
             return False
+
+    # US-only language with no EU counterbalance (already absent — see above)
+    if any(sig in combined for sig in _US_ONLY_SIGNALS):
+        return False
+
+    # Default: keep
     return True
 
 
@@ -339,21 +398,28 @@ def _deduplicate_by_story(articles: list[dict]) -> list[dict]:
     Within each cluster the winner is the article with the lowest tier number;
     ties are broken by longest description.
     """
+    GENERIC = {"restaurant tech", "the restaurant", "for the", "in the",
+               "of the", "to the", "and the", "with the"}
+
     def _titles_match(t1: str, t2: str) -> bool:
         t1_l, t2_l = t1.lower(), t2.lower()
-        # High similarity = near-identical headline (repost/syndication)
+        # Near-identical headline = repost / syndication
         if difflib.SequenceMatcher(None, t1_l, t2_l).ratio() > 0.85:
             return True
-        # 5+ consecutive distinctive words shared = likely same story
-        for words in (t1_l.split(), t2_l.split()):
-            other = t2_l if words is t1_l.split() else t1_l
-            if len(words) >= 5:
-                for i in range(len(words) - 4):
-                    phrase = " ".join(words[i : i + 5])
-                    # Skip generic phrases that appear in many articles
-                    generic = {"restaurant tech", "the restaurant", "for the", "in the"}
-                    if not any(g in phrase for g in generic) and phrase in other:
-                        return True
+        # 5+ consecutive distinctive words from t1 found verbatim in t2
+        t1_words = t1_l.split()
+        if len(t1_words) >= 5:
+            for i in range(len(t1_words) - 4):
+                phrase = " ".join(t1_words[i : i + 5])
+                if not any(g in phrase for g in GENERIC) and phrase in t2_l:
+                    return True
+        # 5+ consecutive distinctive words from t2 found verbatim in t1
+        t2_words = t2_l.split()
+        if len(t2_words) >= 5:
+            for i in range(len(t2_words) - 4):
+                phrase = " ".join(t2_words[i : i + 5])
+                if not any(g in phrase for g in GENERIC) and phrase in t1_l:
+                    return True
         return False
 
     assigned = [False] * len(articles)
