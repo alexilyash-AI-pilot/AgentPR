@@ -29,7 +29,7 @@ os.environ.setdefault("NEWSAPI_KEY", "")  # empty = skip NewsAPI in tests
 from sources import ALL_QUERIES, KEYWORD_GROUPS, TIER2_DOMAINS, DOMAIN_COUNTRY_MAP, CUTOFF_DATE
 from monitor import (
     _parse_date, _is_after_cutoff, _domain_from_url,
-    _country_for_domain, _portal_name_from_domain, _match_company,
+    _country_for_domain, _portal_name_from_domain, _match_companies,
     _build_article, fetch_google_news_rss,
 )
 from telegram_bot import _escape, _format_author
@@ -82,23 +82,25 @@ class TestDomainHelpers(unittest.TestCase):
 
 class TestCompanyMatching(unittest.TestCase):
     def test_matches_deliverect(self):
-        self.assertEqual(_match_company("Deliverect raises Series C"), "Deliverect")
+        self.assertEqual(_match_companies("Deliverect raises Series C"), ["Deliverect"])
 
     def test_matches_sunday_app(self):
-        self.assertEqual(_match_company("sunday.app launches in Germany"), "Sunday.app")
+        self.assertEqual(_match_companies("sunday.app launches in Germany"), ["Sunday"])
 
     def test_matches_choice(self):
-        self.assertEqual(_match_company("Czech Choice restaurant CRM secures funding"), "Choice")
+        self.assertEqual(_match_companies("Czech Choice restaurant CRM secures funding"), ["ChoiceQR"])
 
     def test_matches_restimo(self):
-        self.assertEqual(_match_company("Restimo expands to Poland"), "Restimo")
+        self.assertEqual(_match_companies("Restimo expands to Poland"), ["Restimo"])
 
-    def test_matches_ai_topic(self):
-        result = _match_company("AI restaurant automation trends in Europe")
-        self.assertIn("AI", result)
+    def test_matches_delivery_ecosystem(self):
+        self.assertEqual(
+            _match_companies("Bolt launches restaurant table ordering integration"),
+            ["Bolt"],
+        )
 
     def test_fallback(self):
-        self.assertEqual(_match_company("Random unrelated news"), "Restaurant Tech")
+        self.assertEqual(_match_companies("Random unrelated news"), ["Restaurant Tech"])
 
 
 class TestBuildArticle(unittest.TestCase):
@@ -144,7 +146,7 @@ class TestSourcesConfig(unittest.TestCase):
         self.assertGreater(len(ALL_QUERIES), 10)
 
     def test_all_keyword_groups_present(self):
-        for group in ["own_brand", "competitors", "ai_topic", "funding"]:
+        for group in ["company_direct", "delivery_ecosystem", "topics"]:
             self.assertIn(group, KEYWORD_GROUPS)
 
     def test_tier2_domains_not_empty(self):

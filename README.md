@@ -72,7 +72,7 @@ The system has two independent parts:
 
 Priority companies currently include Olo, Lunchbox, and Owner.com.
 
-The monitor also tracks delivery ecosystem names as a separate stricter category: DoorDash, Uber Eats, Deliveroo, Wolt, Glovo, Just Eat Takeaway, and Prosus. These names are monitored only when the article is tied to restaurant ordering, table ordering, QR ordering, menu integrations, delivery integrations, omnichannel ordering, or restaurant commerce infrastructure.
+The monitor also tracks delivery ecosystem names as a separate stricter category: DoorDash, Uber Eats, Deliveroo, Wolt, Glovo, Just Eat Takeaway, Prosus, and Bolt. These names are monitored only when the article is tied to restaurant ordering, food delivery commerce, table ordering, QR ordering, menu integrations, delivery integrations, omnichannel ordering, restaurant commerce infrastructure, table reservations, or restaurant reservations.
 
 All company names, delivery ecosystem names, and associated keywords are defined in `sources.py`.
 
@@ -106,7 +106,7 @@ Articles pass through a strict relevance policy before being saved:
 
 4. **Ordering and restaurant-commerce relevance** — The tracked company must be the subject of a meaningful business/product update in restaurant ordering or restaurant commerce. Relevant categories include QR ordering, table ordering, restaurant digital ordering, restaurant AI ordering, restaurant automation, omnichannel restaurant commerce, delivery integrations related to restaurant ordering, restaurant customer experience, menu management, restaurant middleware, ordering orchestration, restaurant operational AI, voice AI ordering for restaurants, first-party restaurant ordering, and smart restaurant technologies.
 
-5. **Delivery ecosystem rule** — DoorDash, Uber Eats, Deliveroo, Wolt, Glovo, Just Eat Takeaway, and Prosus articles pass only when they are about restaurant ordering, table ordering, QR ordering, menu integrations, delivery integrations, omnichannel ordering, or restaurant commerce infrastructure. Generic delivery logistics, courier operations, warehouse/dark-store coverage, and grocery delivery unrelated to restaurants are rejected.
+5. **Delivery ecosystem rule** — DoorDash, Uber Eats, Deliveroo, Wolt, Glovo, Just Eat Takeaway, Prosus, and Bolt articles pass only when they are about restaurant ordering, food delivery commerce, table ordering, QR ordering, menu integrations, delivery integrations, omnichannel ordering, restaurant commerce infrastructure, table reservations, or restaurant reservations. Generic delivery logistics, courier operations, warehouse/dark-store coverage, grocery delivery, ride-hailing, scooters, mobility, and unrelated delivery coverage are rejected unless clearly connected to restaurant ordering, food delivery commerce, or reservations.
 
 6. **Generic tech noise rejection** — Generic POS systems, cash registers, kiosk hardware, loyalty systems, payment systems, and retail technologies unrelated to restaurants receive strong negative scoring or are rejected. POS coverage is kept only when it is directly tied to restaurant-ordering integrations for a monitored company.
 

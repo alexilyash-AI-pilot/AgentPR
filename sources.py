@@ -43,6 +43,7 @@ DELIVERY_ECOSYSTEM_COMPANIES = [
     "Glovo",
     "Just Eat Takeaway",
     "Prosus",
+    "Bolt",
 ]
 
 # ---------------------------------------------------------------------------
@@ -99,6 +100,10 @@ KEYWORD_GROUPS = {
         "Just Eat Takeaway menu integration",
         "Prosus restaurant commerce",
         "Prosus restaurant ordering",
+        "Bolt restaurant ordering",
+        "Bolt food delivery",
+        "Bolt table ordering",
+        "Bolt restaurant reservations",
     ],
     "topics": [
         "restaurant tech funding",
@@ -368,7 +373,7 @@ EU_SIGNALS = {
     "choiceqr", "choice restaurant", "choice crm", "choice.app",
     "olo", "lunchbox", "owner.com", "owner com", "owner restaurants",
     "doordash", "uber eats", "ubereats", "deliveroo", "wolt", "glovo",
-    "just eat takeaway", "just eat", "prosus",
+    "just eat takeaway", "just eat", "prosus", "bolt",
 }
 
 # Cutoff date — only articles published after this date are processed

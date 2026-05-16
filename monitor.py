@@ -45,7 +45,7 @@ from sources import (
     US_ONLY_DOMAINS,
     KEYWORD_GROUPS,
 )
-from telegram_bot import send_article, send_summary
+from telegram_bot import send_article, send_error, send_summary
 
 logging.basicConfig(
     level=logging.INFO,
@@ -219,7 +219,9 @@ _ORDERING_CONTEXT_SIGNALS = [
     "ordering orchestration", "restaurant operational ai",
     "restaurant integrations", "ordering integration",
     "delivery integration", "delivery integrations",
-    "smart restaurant technologies",
+    "smart restaurant technologies", "restaurant reservation",
+    "restaurant reservations", "table reservation", "table reservations",
+    "table booking", "book a table", "reserve a table",
 ]
 
 _DELIVERY_CONTEXT_HINTS = [
@@ -228,7 +230,10 @@ _DELIVERY_CONTEXT_HINTS = [
     "delivery integration", "delivery integrations",
     "omnichannel ordering", "restaurant commerce",
     "restaurant commerce infrastructure", "ordering platform",
-    "ordering integration", "digital ordering",
+    "ordering integration", "digital ordering", "food delivery",
+    "restaurant reservation", "restaurant reservations", "table reservation",
+    "table reservations", "reservation feature", "table booking",
+    "book a table", "reserve a table",
 ]
 
 _DELIVERY_REJECT_CONTEXT_SIGNALS = [
@@ -237,6 +242,8 @@ _DELIVERY_REJECT_CONTEXT_SIGNALS = [
     "gig workers", "logistics", "last-mile", "last mile",
     "warehouse", "warehouses", "dark store", "dark stores",
     "grocery delivery", "groceries", "quick commerce", "q-commerce",
+    "ride-hailing", "rideshare", "taxi", "scooter", "scooters",
+    "mobility", "fleet",
 ]
 
 _GENERIC_TECH_NOISE_PHRASES = [
@@ -674,6 +681,7 @@ _COMPANY_KEYWORDS = {
     "Glovo": ["glovo"],
     "Just Eat Takeaway": ["just eat takeaway", "just eat"],
     "Prosus": ["prosus"],
+    "Bolt": ["bolt"],
 }
 
 # Populate the flat keyword list used by _relevance_score() for title-only matching
@@ -1238,4 +1246,9 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    try:
+        run()
+    except Exception as e:
+        import traceback
+        send_error(f"{type(e).__name__}: {e}\n\n{traceback.format_exc()[:500]}")
+        raise
