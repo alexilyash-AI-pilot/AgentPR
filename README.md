@@ -145,6 +145,33 @@ Manage secrets: [github.com/alexilyash-AI-pilot/AgentPR/settings/secrets/actions
 
 ---
 
+## Interactive Bot Commands
+
+You can send commands directly in the Telegram group and the bot will search and reply — no laptop needed.
+
+| Command | Description |
+|---|---|
+| `/search <query>` | Search EU articles for any topic (default: last 3 months) |
+| `/search <query> 12 months` | Search with custom timeframe |
+| `/search <query> last year` | Natural language timeframes work too |
+| `/help` | Show all commands |
+| `/status` | Show agent status and settings |
+
+**Examples you can send in the group:**
+```
+/search deliverect 12 months
+/search AI restaurants last year
+/search sunday.app 3 months
+/search restaurant POS Europe 6 months
+/search upmenu last week
+/search Choice restaurant CRM 6 months
+```
+
+The bot checks for new commands every **15 minutes** and replies directly in the group.  
+Only EU/European articles in English are returned.
+
+---
+
 ## Schedule
 
 Runs automatically at **00:00, 06:00, 12:00, 18:00 UTC** (every 6 hours).
