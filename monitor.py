@@ -208,12 +208,30 @@ _FOOD_NOISE_PHRASES = [
     "best deals", "valentine", "christmas menu", "new menu", "tasting menu",
     "prix fixe", "happy hour", "brunch", "chef's table", "michelin",
     "best restaurants", "top restaurants", "where to eat", "places to eat",
-    "dining guide",
+    "dining guide", "best menus", "menu guide", "new restaurants and menus",
+    "menus to bookmark", "bookmark this weekend", "mother's day",
+    "mother’s day", "mothers day",
+]
+
+_GENERIC_ARTICLE_TITLE_PATTERNS = [
+    re.compile(r"^\s*article\s*-\s*[\w\s.-]+\s*$", re.I),
+]
+
+_NON_EU_LOCATION_SIGNALS = [
+    "hong kong", "perth", "shreveport", "disneyland", "napa rose",
+    "orange county", "mumbai",
+]
+
+_RESTAURANT_VENUE_SIGNALS = [
+    "restaurant", "restaurants", "cafe", "bistro", "eatery", "diner",
+    "brasserie", "menu", "menus", "chef", "burgers", "catfish",
+    "boudin balls", "tigerfish",
 ]
 
 # US geographic signals that flag US-only content
 _US_GEO_TITLE_SIGNALS = [
     "chicago", "california", "los angeles", "san francisco", "new york city",
+    "shreveport", "disneyland", "orange county",
 ]
 
 # Flat list of all tracked company keywords for fast title-only lookup
@@ -261,13 +279,21 @@ def _relevance_score(article: dict) -> int:
     if any(phrase in title for phrase in _FOOD_NOISE_PHRASES):
         score -= 50
 
+    # -50: generic aggregator placeholders, e.g. "Article - LovinDublin"
+    if any(pattern.search(article.get("title", "")) for pattern in _GENERIC_ARTICLE_TITLE_PATTERNS):
+        score -= 50
+
+    # -50: non-European food/location content with no tracked company in title
+    if any(location in title for location in _NON_EU_LOCATION_SIGNALS) and not company_in_title:
+        score -= 50
+
     # -30: strong US-only geography with no tracked company in title
     if any(geo in title for geo in _US_GEO_TITLE_SIGNALS) and not company_in_title:
         score -= 30
 
     # -20: title mentions a restaurant venue (not a tech platform) without
     #      a tracked company or business-signal word in the title itself
-    if re.search(r"\b(restaurant|cafe|bistro|eatery|diner|brasserie)\b", title):
+    if any(signal in title for signal in _RESTAURANT_VENUE_SIGNALS):
         if not company_in_title and not any(
             sig in title for sig in _RELEVANCE_BUSINESS_SIGNALS
         ):
