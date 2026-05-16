@@ -26,7 +26,6 @@ from bs4 import BeautifulSoup
 
 from sheets import (
     append_article,
-    flush_articles,
     get_all_articles,
     is_duplicate,
     mark_sent,
@@ -45,7 +44,7 @@ from sources import (
     US_ONLY_DOMAINS,
     KEYWORD_GROUPS,
 )
-from telegram_bot import send_article, send_error, send_summary
+from telegram_bot import send_article, send_summary
 
 logging.basicConfig(
     level=logging.INFO,
@@ -732,6 +731,10 @@ def run():
         if not _is_about_company(article):
             logger.debug("Skipped (not about company): %s", article.get("title", "")[:80])
             continue
+        companies = article.get("companies", [])
+        if companies == ["Restaurant Tech"] or not companies:
+            logger.debug("Skipped (no tracked company match): %s", article.get("title", "")[:80])
+            continue
         if url in seen_in_run:
             continue
 
@@ -771,10 +774,6 @@ def run():
 
     new_count = len(new_articles)
     logger.info("New articles after cross-run dedup: %d", new_count)
-
-    # Flush all buffered article rows to Sheets in a single batch API call
-    if use_sheets:
-        flush_articles()
 
     # Step 4: within-run story dedup — one best-source article per story cluster
     to_send = _deduplicate_by_story(new_articles)
@@ -818,9 +817,4 @@ def run():
 
 
 if __name__ == "__main__":
-    try:
-        run()
-    except Exception as e:
-        import traceback
-        send_error(f"{type(e).__name__}: {e}\n\n{traceback.format_exc()[:500]}")
-        raise
+    run()
