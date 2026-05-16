@@ -28,33 +28,48 @@ logger = logging.getLogger(__name__)
 # In-memory state (resets on redeploy — acceptable for this use case)
 # ---------------------------------------------------------------------------
 CONVERSATIONS: dict[str, list] = {}   # chat_id → message history
-SEARCH_CACHE:  dict[str, dict] = {}   # chat_id → {articles, query}
+SEARCH_CACHE:  dict[str, dict] = {}   # chat_id → {articles, query, _seen_urls}
 MAX_HISTORY = 30
 
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "ChoicePRbot")
 
 SYSTEM_PROMPT = (
-    "You are AgentPR, a professional PR research assistant for Choice — "
-    "a restaurant CRM and loyalty platform operating across Europe (choiceqr.com / choice.app).\n\n"
-    "Your job: help the PR team find relevant news articles on ANY topic or company they ask about. "
-    "You are not limited to predefined topics — search for whatever the user requests.\n\n"
-    "Common topics include:\n"
-    "• Choice (ChoiceQR, choice.app, Czech Choice)\n"
-    "• Competitors: Deliverect, Sunday.app, Restimo, Restaumatic, Upmenu, Wolt, Uber Eats\n"
-    "• Topics: AI restaurants, restaurant tech, foodtech, restaurant SaaS, hospitality tech\n"
-    "• Any other company, person, or topic the user asks about\n\n"
-    "Rules you MUST follow:\n"
+    "You are AgentPR, a professional PR research assistant for ChoiceQR — "
+    "a European restaurant QR-ordering and software platform (choiceqr.com / choice.app).\n\n"
+
+    "## COMPANY CONTEXT (critical — read before every search)\n"
+    "• 'Choice', 'ChoiceQR', 'choiceqr', 'choice qr', 'choiceqr.com', 'choice.app' all refer to "
+    "the SAME company: ChoiceQR (choiceqr.com). When the user says 'Choice', they always mean ChoiceQR.\n"
+    "• Known competitors: Sunday.app (QR payments), Deliverect (delivery integration), "
+    "Restimo, Restaumatic, Upmenu — all European restaurant-tech companies.\n\n"
+
+    "## REASONING STEP — do this BEFORE every search\n"
+    "Before calling search_articles, briefly state:\n"
+    "1. What company/topic the user is asking about (map shorthand → full name, e.g. 'Choice' → 'ChoiceQR').\n"
+    "2. Which 2–3 query variations you will try (e.g. 'ChoiceQR', 'choice qr restaurant', 'choiceqr.com').\n"
+    "Then execute those searches one by one using separate search_articles calls.\n\n"
+
+    "## MULTI-SEARCH RULES\n"
+    "• Always run at least 2 search_articles calls for ChoiceQR/Choice queries:\n"
+    "  — 'ChoiceQR'\n"
+    "  — 'choice qr restaurant'\n"
+    "  — optionally 'choiceqr.com' if previous searches returned few results.\n"
+    "• For competitor or topic queries, try 2 variations (e.g. 'Sunday.app' then 'sunday app restaurant').\n"
+    "• Duplicates are automatically removed across your searches — just keep calling search_articles.\n\n"
+
+    "## AFTER SEARCHING\n"
+    "After all searches are complete, show a combined numbered list of unique articles, then ALWAYS ask:\n"
+    "'Found [N] articles. Where should I send them?\n"
+    "1️⃣  Here in the group\n"
+    "2️⃣  New Google Sheet tab'\n\n"
+
+    "## RULES\n"
     "1. Search for ANY topic or company the user asks about — no restrictions on topic or language.\n"
-    "2. When asked to find articles → call search_articles immediately.\n"
-    "3. After search returns results, show a numbered list, then ALWAYS ask:\n"
-    "   'Found [N] articles. Where should I send them?\n"
-    "   1️⃣  Here in the group\n"
-    "   2️⃣  New Google Sheet tab'\n"
-    "4. Do NOT call send_to_group or create_sheet_tab until the user replies.\n"
-    "5. '1' / 'here' / 'group' / 'send here' → call send_to_group.\n"
-    "6. '2' / 'sheet' / 'google sheet' / 'spreadsheet' → call create_sheet_tab.\n"
-    "7. If search returns 0 results → tell the user; no need to ask where to send.\n"
-    "8. Be concise and professional."
+    "2. NEVER call send_to_group or create_sheet_tab until the user explicitly replies.\n"
+    "3. '1' / 'here' / 'group' / 'send here' → call send_to_group.\n"
+    "4. '2' / 'sheet' / 'google sheet' / 'spreadsheet' → call create_sheet_tab.\n"
+    "5. If all searches return 0 results → tell the user; no need to ask where to send.\n"
+    "6. Be concise and professional."
 )
 
 TOOLS = [
@@ -164,6 +179,9 @@ def _handle_update(data: dict) -> None:
     if len(history) > MAX_HISTORY:
         history = history[-MAX_HISTORY:]
 
+    # Reset article accumulator for this new user turn
+    SEARCH_CACHE[chat_id] = {"articles": [], "query": "", "_seen_urls": set()}
+
     _run_agent(history, chat_id)
     CONVERSATIONS[chat_id] = history
 
@@ -243,14 +261,34 @@ def _run_agent(history: list, chat_id: str) -> None:
 
 def _execute_tool(name: str, inputs: dict, chat_id: str) -> str:
     if name == "search_articles":
-        query    = inputs.get("query", "")
-        days     = int(inputs.get("days", 90))
-        articles = search_articles(query, days)
-        SEARCH_CACHE[chat_id] = {"articles": articles, "query": query}
-        if not articles:
+        query = inputs.get("query", "")
+        days  = int(inputs.get("days", 90))
+        new_articles = search_articles(query, days)
+
+        # Accumulate results across multiple search calls, deduplicating by URL
+        cached = SEARCH_CACHE.setdefault(
+            chat_id, {"articles": [], "query": "", "_seen_urls": set()}
+        )
+        seen: set = cached.setdefault("_seen_urls", set())
+        added = 0
+        for a in new_articles:
+            if a["url"] not in seen:
+                seen.add(a["url"])
+                cached["articles"].append(a)
+                added += 1
+        # Track the most recent query label for sheet tab naming
+        if query:
+            cached["query"] = query
+
+        total = len(cached["articles"])
+        if added == 0 and total == 0:
             return f"No articles found for '{query}' in the past {days} days."
-        lines = [f"Found {len(articles)} articles for '{query}' (past {days} days):"]
-        for i, a in enumerate(articles, 1):
+
+        lines = [
+            f"Search '{query}': found {added} new article(s) "
+            f"(total unique so far: {total}, past {days} days):"
+        ]
+        for i, a in enumerate(cached["articles"], 1):
             lines.append(f"{i}. {a['title']}  |  {a['portal']}  |  {a['published']}")
         return "\n".join(lines)
 

@@ -132,6 +132,10 @@ TIER2_DOMAINS = [
 TIER3_DOMAINS = [
     "startuprise.co.uk",
     "forbes.hu",
+    "forbes.cz",
+    "forbes.pl",
+    "forbes.ro",
+    "forbes.sk",
     "netokracija.com",
     "bebeez.eu",
     "technews180.com",
@@ -142,7 +146,6 @@ TIER3_DOMAINS = [
     "www.innowacje.newseria.pl",
     "czechcrunch.cz",
     "lupa.cz",
-    "forbes.cz",
     "startitup.sk",
     "businessinsider.com.pl",
 ]
@@ -212,6 +215,9 @@ DOMAIN_COUNTRY_MAP = {
     "czechcrunch.cz": "Czech Republic",
     "lupa.cz": "Czech Republic",
     "forbes.cz": "Czech Republic",
+    "forbes.pl": "Poland",
+    "forbes.ro": "Romania",
+    "forbes.sk": "Slovakia",
     "startitup.sk": "Slovakia",
     "businessinsider.com.pl": "Poland",
 }
@@ -236,7 +242,7 @@ EU_SIGNALS = {
     "brussels", "vienna", "zurich", "lisbon", "milan", "barcelona",
     # Tracked companies (always EU-relevant by definition)
     "deliverect", "restimo", "restaumatic", "upmenu", "sunday.app",
-    "choice restaurant", "choice crm", "choice.app",
+    "choice restaurant", "choice crm", "choice.app", "choiceqr", "choiceqr.com",
 }
 
 # Cutoff date — only articles published after this date are processed
