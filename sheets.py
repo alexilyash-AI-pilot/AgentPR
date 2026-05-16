@@ -45,6 +45,10 @@ def sheets_enabled() -> bool:
     )
 
 
+_ws_cache: Optional["gspread.Worksheet"] = None  # type: ignore[name-defined]
+_ws_initialized: bool = False
+
+
 def _get_client():
     raw = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
     info = json.loads(raw)
@@ -52,7 +56,19 @@ def _get_client():
     return gspread.authorize(creds)
 
 
-def _get_worksheet(client):
+def _get_worksheet(client=None):
+    """Return the Articles worksheet, caching after the first call.
+
+    The header-check read (get_all_values) is only done once per process so
+    that bulk appends do not hammer the Sheets read-requests-per-minute quota.
+    """
+    global _ws_cache, _ws_initialized
+    if _ws_cache is not None:
+        return _ws_cache
+
+    if client is None:
+        client = _get_client()
+
     spreadsheet_id = os.environ["SPREADSHEET_ID"]
     sheet = client.open_by_key(spreadsheet_id)
     try:
@@ -60,12 +76,15 @@ def _get_worksheet(client):
     except gspread.WorksheetNotFound:
         ws = sheet.add_worksheet(title="Articles", rows=5000, cols=len(SHEET_HEADERS))
 
-    # Initialize headers only when the sheet is completely empty
-    existing = ws.get_all_values()
-    if not existing:
-        ws.append_row(SHEET_HEADERS, value_input_option="RAW")
-        logger.info("Initialized 'Articles' worksheet with new headers.")
+    if not _ws_initialized:
+        # Only read the sheet once to check whether headers are needed
+        existing = ws.get_all_values()
+        if not existing:
+            ws.append_row(SHEET_HEADERS, value_input_option="RAW")
+            logger.info("Initialized 'Articles' worksheet with new headers.")
+        _ws_initialized = True
 
+    _ws_cache = ws
     return ws
 
 
@@ -75,8 +94,7 @@ def get_all_articles() -> list[dict]:
         logger.info("Google Sheets not configured — returning empty article list.")
         return []
     try:
-        client = _get_client()
-        ws = _get_worksheet(client)
+        ws = _get_worksheet()
         return ws.get_all_records()
     except Exception as exc:
         logger.error("get_all_articles failed: %s", exc)
@@ -103,8 +121,7 @@ def append_article(article: dict) -> bool:
     if not sheets_enabled():
         return False
     try:
-        client = _get_client()
-        ws = _get_worksheet(client)
+        ws = _get_worksheet()
         now = datetime.utcnow().isoformat()
         row = [
             article.get("date_added", now),
@@ -130,8 +147,7 @@ def mark_sent(url: str) -> bool:
     if not sheets_enabled():
         return False
     try:
-        client = _get_client()
-        ws = _get_worksheet(client)
+        ws = _get_worksheet()
         url_col = ws.col_values(_COL_URL)
         url_clean = url.strip()
         for i, cell_url in enumerate(url_col):

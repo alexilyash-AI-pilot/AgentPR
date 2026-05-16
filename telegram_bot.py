@@ -53,7 +53,8 @@ def send_article(article: dict) -> bool:
         f"📝 Summary:\n{_escape(summary)}\n\n"
         f"🌐 Portal:\n{_escape(portal)}\n\n"
         f"🔗 Link:\n{url}\n\n"
-        f"📅 Publication date: {pub_date}"
+        f"📅 Publication date: {pub_date}\n\n"
+        f"📊 All articles: https://docs.google.com/spreadsheets/d/1nSkFz_2kUs76LIO_mcl5x0WvhuESyRWJ4bSigOoO5UM/edit"
     )
 
     payload = {
@@ -97,7 +98,31 @@ def send_summary(total_new: int) -> None:
     if not token or not chat_id:
         return
 
-    text = "✅ AgentPR scan complete — no new articles found this run."
+    text = (
+        "✅ AgentPR scan complete — no new articles found this run.\n"
+        "📊 All articles: https://docs.google.com/spreadsheets/d/1nSkFz_2kUs76LIO_mcl5x0WvhuESyRWJ4bSigOoO5UM/edit"
+    )
+    try:
+        requests.post(
+            TELEGRAM_API.format(token=token),
+            json={"chat_id": chat_id, "text": text},
+            timeout=10,
+        )
+    except requests.RequestException:
+        pass
+
+
+def send_error(error_msg: str) -> None:
+    """Send an error alert to the configured Telegram group."""
+    if os.environ.get("TELEGRAM_DISABLED", "").lower() in ("1", "true", "yes"):
+        return
+
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+    if not token or not chat_id:
+        return
+
+    text = f"⚠️ AgentPR ERROR:\n{error_msg}\n\nPlease check the logs."
     try:
         requests.post(
             TELEGRAM_API.format(token=token),

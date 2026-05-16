@@ -44,7 +44,7 @@ from sources import (
     US_ONLY_DOMAINS,
     KEYWORD_GROUPS,
 )
-from telegram_bot import send_article, send_summary
+from telegram_bot import send_article, send_error, send_summary
 
 logging.basicConfig(
     level=logging.INFO,
@@ -256,7 +256,8 @@ def _portal_name_from_domain(domain: str) -> str:
 
 _COMPANY_KEYWORDS = {
     "Deliverect": ["deliverect"],
-    "Sunday": ["sunday.app", "sundayapp", "sunday app qr", "sunday app payment"],
+    "Sunday": ["sunday.app", "sundayapp", "sunday app qr", "sunday app payment",
+               "sunday payment", "sunday qr"],
     "Flipdish": ["flipdish"],
     "StoreKit": ["storekit"],
     "UpMenu": ["upmenu"],
@@ -273,19 +274,53 @@ _COMPANY_KEYWORDS = {
     "Otter": ["tryotter", "otter restaurant"],
     "TableQR": ["tableqr"],
     "MENU TIGER": ["menutiger", "menu tiger"],
-    "ChoiceQR": ["choiceqr", "choice.app", "choice restaurant", "choice crm"],
+    "ChoiceQR": ["choiceqr", "choice.app", "choice restaurant", "choice crm",
+                 "choice qr", "choice raises", "choice funding", "choice platform"],
 }
 
+# Ambiguous single-word company names that need context to disambiguate
+_AMBIGUOUS_COMPANY_CONTEXT: list[tuple[str, str, list[str]]] = [
+    # (company_name, ambiguous_keyword, context_signals)
+    (
+        "ChoiceQR",
+        "choice",
+        ["restaurant", "saas", "qr", "ordering", "pos", "hospitality",
+         "tech", "software", "startup", "funding", "raises"],
+    ),
+    (
+        "Sunday",
+        "sunday",
+        ["restaurant", "payment", "qr", "hospitality"],
+    ),
+    (
+        "Otter",
+        "otter",
+        ["restaurant", "delivery"],
+    ),
+]
 
-def _match_companies(text: str) -> list[str]:
-    """Return all tracked company names mentioned in text."""
-    text_lower = text.lower()
+
+def _match_companies(title: str, description: str = "", query: str = "") -> list[str]:
+    """Return all tracked company names mentioned in title/description/query."""
+    combined = f"{title} {description} {query}".lower()
     matches = []
+
+    # Exact keyword matching across all three fields
     for company, keywords in _COMPANY_KEYWORDS.items():
         for kw in keywords:
-            if kw in text_lower:
+            if kw in combined:
                 matches.append(company)
                 break
+
+    # Context-aware matching for ambiguous single-word names
+    for company, keyword, context_signals in _AMBIGUOUS_COMPANY_CONTEXT:
+        if company in matches:
+            continue  # already matched via exact keyword
+        # The keyword must appear as a standalone word (not part of a longer token)
+        if re.search(r"\b" + re.escape(keyword) + r"\b", combined):
+            if any(signal in combined for signal in context_signals):
+                matches.append(company)
+
     return matches if matches else ["Restaurant Tech"]
 
 
@@ -480,7 +515,7 @@ def _build_article(entry: dict, query: str = "") -> dict:
         portal = _portal_name_from_domain(domain)
 
     combined_text = f"{title} {query}"
-    companies = _match_companies(combined_text)
+    companies = _match_companies(combined_text, description=description)
 
     author_first, author_last = split_author_name(author_raw)
 
@@ -778,4 +813,9 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    try:
+        run()
+    except Exception as e:
+        import traceback
+        send_error(f"{type(e).__name__}: {e}\n\n{traceback.format_exc()[:500]}")
+        raise
