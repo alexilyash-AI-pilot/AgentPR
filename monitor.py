@@ -341,13 +341,18 @@ def _deduplicate_by_story(articles: list[dict]) -> list[dict]:
     """
     def _titles_match(t1: str, t2: str) -> bool:
         t1_l, t2_l = t1.lower(), t2.lower()
-        if difflib.SequenceMatcher(None, t1_l, t2_l).ratio() > 0.70:
+        # High similarity = near-identical headline (repost/syndication)
+        if difflib.SequenceMatcher(None, t1_l, t2_l).ratio() > 0.85:
             return True
+        # 5+ consecutive distinctive words shared = likely same story
         for words in (t1_l.split(), t2_l.split()):
             other = t2_l if words is t1_l.split() else t1_l
-            if len(words) >= 3:
-                for i in range(len(words) - 2):
-                    if " ".join(words[i : i + 3]) in other:
+            if len(words) >= 5:
+                for i in range(len(words) - 4):
+                    phrase = " ".join(words[i : i + 5])
+                    # Skip generic phrases that appear in many articles
+                    generic = {"restaurant tech", "the restaurant", "for the", "in the"}
+                    if not any(g in phrase for g in generic) and phrase in other:
                         return True
         return False
 
