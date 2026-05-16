@@ -142,15 +142,13 @@ def _handle_update(data: dict) -> None:
     text      = (msg.get("text") or "").strip()
     chat_type = msg["chat"].get("type", "private")
 
-    # Groups: only respond to @mentions or replies to bot
+    # Groups: strip @mention if present, then respond to everything
     if chat_type in ("group", "supergroup"):
         mention = f"@{BOT_USERNAME}"
-        is_mention = mention in text
-        reply_to = msg.get("reply_to_message") or {}
-        is_reply_to_bot = (reply_to.get("from") or {}).get("username", "") == BOT_USERNAME
-        if not is_mention and not is_reply_to_bot:
-            return
         text = text.replace(mention, "").strip()
+        # If message was only the mention with no other text, skip
+        if not text:
+            return
 
     if not text:
         return
