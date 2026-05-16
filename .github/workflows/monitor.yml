@@ -1,0 +1,35 @@
+name: AgentPR Monitor
+
+on:
+  schedule:
+    # Runs every 6 hours: 00:00, 06:00, 12:00, 18:00 UTC
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    # Allows manual trigger from GitHub Actions UI
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run AgentPR monitor
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+        run: python monitor.py
