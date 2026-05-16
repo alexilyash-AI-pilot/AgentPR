@@ -2,7 +2,7 @@
 AgentPR Tool implementations — called by Claude via the Anthropic tools API.
 
 Tools:
-  search_articles(query, days)   → EU/English filtered Google News RSS results
+  search_articles(query, days)   → EU-filtered Google News RSS results (any language)
   send_to_group()                → post cached articles to Telegram group
   create_sheet_tab()             → new worksheet tab in AgentPR Articles sheet
 
@@ -95,7 +95,7 @@ def _escape_html(text: str) -> str:
 
 def search_articles(query: str, days: int = 90) -> list[dict]:
     """
-    Search Google News RSS for EU-relevant English articles.
+    Search Google News RSS for EU-relevant articles on any topic, any language.
     Returns a list of article dicts: title, url, portal, published.
     """
     since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
@@ -115,8 +115,6 @@ def search_articles(query: str, days: int = 90) -> list[dict]:
             domain = _domain_from_url(url)
 
             if not url or not title:
-                continue
-            if not _is_english(title):
                 continue
             if not _is_eu_relevant(domain, title):
                 continue
@@ -138,7 +136,7 @@ def search_articles(query: str, days: int = 90) -> list[dict]:
             seen.add(r["url"])
             results.append(r)
 
-    logger.info("search_articles('%s', %d days) → %d results", query, days, len(results))
+    logger.info("search_articles('%s', %d days) → %d results (any language)", query, days, len(results))
     return results[:MAX_SEARCH_RESULTS]
 
 
@@ -238,8 +236,9 @@ TOOL_SCHEMAS = [
     {
         "name": "search_articles",
         "description": (
-            "Search for EU/European news articles in English on a given topic. "
-            "Use this whenever the user asks to find, search, or show articles. "
+            "Search for news articles on ANY topic or company name, in any language. "
+            "Use this whenever the user asks to find, search, or show articles — "
+            "there are no restrictions on topic, company, or language. "
             "After the search, show a numbered summary and ALWAYS ask: "
             "'Found X articles. Where should I send them?\n"
             "1️⃣ Here in the group\n2️⃣ New Google Sheet tab' "
@@ -250,7 +249,7 @@ TOOL_SCHEMAS = [
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Search topic, e.g. 'Deliverect funding Europe', 'AI restaurants'",
+                    "description": "Any search topic or company name, e.g. 'Deliverect funding', 'AI restaurants', 'McDonald Europe', 'Wolt expansion'",
                 },
                 "days": {
                     "type": "integer",

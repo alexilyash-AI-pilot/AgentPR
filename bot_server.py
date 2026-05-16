@@ -36,12 +36,15 @@ BOT_USERNAME = os.environ.get("BOT_USERNAME", "ChoicePRbot")
 SYSTEM_PROMPT = (
     "You are AgentPR, a professional PR research assistant for Choice — "
     "a restaurant CRM and loyalty platform operating across Europe (choiceqr.com / choice.app).\n\n"
-    "Your job: help the PR team find relevant EU/European news articles about:\n"
+    "Your job: help the PR team find relevant news articles on ANY topic or company they ask about. "
+    "You are not limited to predefined topics — search for whatever the user requests.\n\n"
+    "Common topics include:\n"
     "• Choice (ChoiceQR, choice.app, Czech Choice)\n"
-    "• Competitors: Deliverect, Sunday.app, Restimo, Restaumatic, Upmenu\n"
-    "• Topics: AI restaurants, restaurant tech, foodtech, restaurant SaaS, hospitality tech\n\n"
+    "• Competitors: Deliverect, Sunday.app, Restimo, Restaumatic, Upmenu, Wolt, Uber Eats\n"
+    "• Topics: AI restaurants, restaurant tech, foodtech, restaurant SaaS, hospitality tech\n"
+    "• Any other company, person, or topic the user asks about\n\n"
     "Rules you MUST follow:\n"
-    "1. Only search EU/European sources in English.\n"
+    "1. Search for ANY topic or company the user asks about — no restrictions on topic or language.\n"
     "2. When asked to find articles → call search_articles immediately.\n"
     "3. After search returns results, show a numbered list, then ALWAYS ask:\n"
     "   'Found [N] articles. Where should I send them?\n"
@@ -60,8 +63,9 @@ TOOLS = [
         "function": {
             "name": "search_articles",
             "description": (
-                "Search for EU/European news articles in English on a given topic. "
-                "Use this whenever the user asks to find, search, or show articles. "
+                "Search for news articles on ANY topic or company name, in any language. "
+                "Use this whenever the user asks to find, search, or show articles — "
+                "no restrictions on topic or language. "
                 "After the search, show a numbered summary and ALWAYS ask where to send them."
             ),
             "parameters": {
@@ -69,7 +73,7 @@ TOOLS = [
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Search topic, e.g. 'Deliverect funding Europe', 'AI restaurants'",
+                        "description": "Any search topic or company name, e.g. 'Deliverect funding', 'AI restaurants', 'McDonald Europe', 'Wolt expansion'",
                     },
                     "days": {
                         "type": "integer",
@@ -244,8 +248,8 @@ def _execute_tool(name: str, inputs: dict, chat_id: str) -> str:
         articles = search_articles(query, days)
         SEARCH_CACHE[chat_id] = {"articles": articles, "query": query}
         if not articles:
-            return f"No EU/English articles found for '{query}' in the past {days} days."
-        lines = [f"Found {len(articles)} EU articles for '{query}' (past {days} days):"]
+            return f"No articles found for '{query}' in the past {days} days."
+        lines = [f"Found {len(articles)} articles for '{query}' (past {days} days):"]
         for i, a in enumerate(articles, 1):
             lines.append(f"{i}. {a['title']}  |  {a['portal']}  |  {a['published']}")
         return "\n".join(lines)

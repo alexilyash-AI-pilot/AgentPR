@@ -106,6 +106,23 @@ TIER2_DOMAINS = [
     "itlogs.com",
     "restauranttechnologynews.com",
     "thesaasnews.com",
+    # UK startup / tech
+    "uktech.news",
+    "techround.co.uk",
+    "startups.co.uk",
+    # Hospitality & foodtech trade press
+    "thecaterer.com",
+    "foodnavigator.com",
+    "hospitalitynet.org",
+    "big-hosp.co.uk",
+    # DACH / German-speaking region
+    "gruenderszene.de",
+    "deutsche-startups.de",
+    # French tech
+    "frenchweb.fr",
+    # Iberia / Southern Europe
+    "elreferente.es",
+    "startupxplore.com",
 ]
 
 # ---------------------------------------------------------------------------
@@ -121,6 +138,13 @@ TIER3_DOMAINS = [
     "start-up.ro",
     "friss-hirek.hu",
     "er10.kz",
+    # Additional CEE / regional portals
+    "www.innowacje.newseria.pl",
+    "czechcrunch.cz",
+    "lupa.cz",
+    "forbes.cz",
+    "startitup.sk",
+    "businessinsider.com.pl",
 ]
 
 ALL_DOMAINS = TIER1_DOMAINS + TIER2_DOMAINS + TIER3_DOMAINS
@@ -173,6 +197,23 @@ DOMAIN_COUNTRY_MAP = {
     "startuprise.co.uk": "UK",
     "cybernews.com": "Lithuania",
     "itlogs.com": "International",
+    "uktech.news": "UK",
+    "techround.co.uk": "UK",
+    "startups.co.uk": "UK",
+    "thecaterer.com": "UK",
+    "big-hosp.co.uk": "UK",
+    "foodnavigator.com": "UK",
+    "hospitalitynet.org": "International",
+    "gruenderszene.de": "Germany",
+    "deutsche-startups.de": "Germany",
+    "frenchweb.fr": "France",
+    "elreferente.es": "Spain",
+    "startupxplore.com": "Spain",
+    "czechcrunch.cz": "Czech Republic",
+    "lupa.cz": "Czech Republic",
+    "forbes.cz": "Czech Republic",
+    "startitup.sk": "Slovakia",
+    "businessinsider.com.pl": "Poland",
 }
 
 # ---------------------------------------------------------------------------
