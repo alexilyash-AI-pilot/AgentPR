@@ -12,6 +12,10 @@ def send_article(article: dict) -> bool:
     Send a single article notification to the configured Telegram group.
     Returns True on success, False on failure.
     """
+    if os.environ.get("TELEGRAM_DISABLED", "").lower() in ("1", "true", "yes"):
+        logger.info("Telegram disabled (TELEGRAM_DISABLED=1), skipping send.")
+        return True
+
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
 
@@ -62,6 +66,9 @@ def send_summary(total_new: int) -> None:
     """Send a brief run-summary message (used when 0 new articles found)."""
     if total_new > 0:
         return  # individual messages already sent
+
+    if os.environ.get("TELEGRAM_DISABLED", "").lower() in ("1", "true", "yes"):
+        return
 
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
