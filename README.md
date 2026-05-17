@@ -202,6 +202,7 @@ Implementation: `bot_server.py` (webhook server) and `tools.py` (tool functions)
 |--------|---------------------|
 | `TELEGRAM_BOT_TOKEN` | Bot token for `@AiPRChoice` |
 | `TELEGRAM_CHAT_ID` | `-1003524787352` |
+| `TELEGRAM_DISABLED` | **Optional.** Omit this secret or leave it unset so scheduled runs send Telegram notifications. Set to `1` / `true` only when you intentionally want to suppress monitor alerts (end-of-run summary, per-article posts, and error alerts). |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Full JSON of the Google service account credentials |
 | `SPREADSHEET_ID` | `1nSkFz_2kUs76LIO_mcl5x0WvhuESyRWJ4bSigOoO5UM` |
 

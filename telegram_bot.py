@@ -2,6 +2,7 @@ import os
 import logging
 import time
 from email.utils import parsedate_to_datetime
+from typing import Optional
 import requests
 
 logger = logging.getLogger(__name__)
@@ -9,12 +10,24 @@ logger = logging.getLogger(__name__)
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 
 
+def _telegram_disabled() -> bool:
+    return os.environ.get("TELEGRAM_DISABLED", "").lower() in ("1", "true", "yes")
+
+
+def _sheet_link_line() -> str:
+    sid = os.environ.get("SPREADSHEET_ID", "").strip()
+    if not sid:
+        return ""
+    url = f"https://docs.google.com/spreadsheets/d/{sid}"
+    return f"\n\n📊 Sheet: {url}"
+
+
 def send_article(article: dict) -> bool:
     """
     Send a single article notification to the configured Telegram group.
     Returns True on success, False on failure.
     """
-    if os.environ.get("TELEGRAM_DISABLED", "").lower() in ("1", "true", "yes"):
+    if _telegram_disabled():
         logger.info("Telegram disabled (TELEGRAM_DISABLED=1), skipping send.")
         return True
 
@@ -53,8 +66,7 @@ def send_article(article: dict) -> bool:
         f"📝 Summary:\n{_escape(summary)}\n\n"
         f"🌐 Portal:\n{_escape(portal)}\n\n"
         f"🔗 Link:\n{url}\n\n"
-        f"📅 Publication date: {pub_date}\n\n"
-        f"📊 All articles: https://docs.google.com/spreadsheets/d/1nSkFz_2kUs76LIO_mcl5x0WvhuESyRWJ4bSigOoO5UM/edit"
+        f"📅 Publication date: {pub_date}"
     )
 
     payload = {
@@ -85,12 +97,20 @@ def send_article(article: dict) -> bool:
     return False
 
 
-def send_summary(total_new: int) -> None:
-    """Send a brief run-summary message (used when 0 new articles found)."""
-    if total_new > 0:
-        return  # individual messages already sent
+def send_run_report(
+    candidate_new: int,
+    dedup_winners: int,
+    sent_count: int,
+    *,
+    note: Optional[str] = None,
+) -> None:
+    """
+    Single end-of-run summary: always sent when Telegram is enabled and configured.
 
-    if os.environ.get("TELEGRAM_DISABLED", "").lower() in ("1", "true", "yes"):
+    Covers: no new articles; new candidates but nothing sent (dedup or failures);
+    normal runs with per-article sends plus recap counts.
+    """
+    if _telegram_disabled():
         return
 
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -98,23 +118,42 @@ def send_summary(total_new: int) -> None:
     if not token or not chat_id:
         return
 
-    text = (
-        "✅ AgentPR scan complete — no new articles found this run.\n"
-        "📊 All articles: https://docs.google.com/spreadsheets/d/1nSkFz_2kUs76LIO_mcl5x0WvhuESyRWJ4bSigOoO5UM/edit"
-    )
+    sheet = _sheet_link_line()
+
+    if candidate_new == 0:
+        text = f"✅ AgentPR scan complete — no new articles found this run.{sheet}"
+    elif sent_count == 0:
+        text = (
+            f"⚠️ Found {candidate_new} candidate article(s) after cross-run dedupe "
+            f"but {dedup_winners} after story dedupe; sent 0. "
+            f"Check logs / filters.{sheet}"
+        )
+        if note:
+            text += f"\n\n{note}"
+    else:
+        text = (
+            f"✅ AgentPR run complete.\n"
+            f"• New candidates (cross-run dedupe): {candidate_new}\n"
+            f"• After story dedupe: {dedup_winners}\n"
+            f"• Telegram article messages sent: {sent_count}{sheet}"
+        )
+        if note:
+            text += f"\n\n{note}"
+
     try:
-        requests.post(
+        resp = requests.post(
             TELEGRAM_API.format(token=token),
             json={"chat_id": chat_id, "text": text},
             timeout=10,
         )
-    except requests.RequestException:
-        pass
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        logger.warning("send_run_report failed: %s", exc)
 
 
-def send_error(error_msg: str) -> None:
-    """Send an error alert to the configured Telegram group."""
-    if os.environ.get("TELEGRAM_DISABLED", "").lower() in ("1", "true", "yes"):
+def send_error(message: str) -> None:
+    """Send a monitor failure alert to the configured Telegram group."""
+    if _telegram_disabled():
         return
 
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -122,7 +161,7 @@ def send_error(error_msg: str) -> None:
     if not token or not chat_id:
         return
 
-    text = f"⚠️ AgentPR ERROR:\n{error_msg}\n\nPlease check the logs."
+    text = f"🚨 AgentPR monitor failed\n\n{message[:3500]}"
     try:
         requests.post(
             TELEGRAM_API.format(token=token),

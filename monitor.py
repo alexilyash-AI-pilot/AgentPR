@@ -45,7 +45,7 @@ from sources import (
     US_ONLY_DOMAINS,
     KEYWORD_GROUPS,
 )
-from telegram_bot import send_article, send_error, send_summary
+from telegram_bot import send_article, send_error, send_run_report
 
 logging.basicConfig(
     level=logging.INFO,
@@ -1208,10 +1208,11 @@ def run():
 
     # Step 4: within-run story dedup — one best-source article per story cluster
     to_send = _deduplicate_by_story(new_articles)
+    dedup_winners = len(to_send)
     logger.info(
         "After story dedup: %d to send (%d suppressed as lower-authority duplicates)",
-        len(to_send),
-        new_count - len(to_send),
+        dedup_winners,
+        new_count - dedup_winners,
     )
 
     # Step 5: send to Telegram; mark sent only for the articles actually sent
@@ -1226,7 +1227,16 @@ def run():
         )
 
     sent_count = 0
+    tg_ready = bool(os.environ.get("TELEGRAM_BOT_TOKEN")) and bool(
+        os.environ.get("TELEGRAM_CHAT_ID")
+    )
+    if not tg_ready:
+        logger.warning(
+            "Telegram not configured — skipping per-article sends (set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)."
+        )
     for article in send_batch:
+        if not tg_ready:
+            break
         sent = send_article(article)
         if sent:
             sent_count += 1
@@ -1238,8 +1248,19 @@ def run():
     if not use_sheets:
         _save_seen_urls_local(seen_urls_local)
 
-    # Step 6: summary
-    send_summary(new_count)
+    # Step 6: one Telegram run report (matches every scheduled run when Telegram is on)
+    cap_skipped = len(to_send) - len(send_batch)
+    report_note = (
+        f"{cap_skipped} article(s) skipped this run due to {MAX_SEND_PER_RUN}-message cap."
+        if cap_skipped > 0
+        else None
+    )
+    send_run_report(
+        candidate_new=new_count,
+        dedup_winners=dedup_winners,
+        sent_count=sent_count,
+        note=report_note,
+    )
     logger.info(
         "=== AgentPR run complete. %d new articles found, %d sent. ===",
         new_count,
