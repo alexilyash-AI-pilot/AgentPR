@@ -114,6 +114,8 @@ Articles pass through a strict relevance policy before being saved:
 
     **Venue ranking listicles citing reservation brands:** Headlines framed as journalist/must-eat/restaurant roundup using **OpenTable**, **TheFork**, or **Reserve with Google** *only as the ranking/source* (especially `according to … opentable` / `according to … thefork` paired with roundup language or consumer ranking cues) are rejected so they cannot pass purely because the brand name appears in the title. Headlines containing clear product/corporate news wording (launch, acquisition, partnership, funding, announces, integrates, …) still pass via the usual business-signal salvage.
 
+    **Prestige / magazine honors:** Headlines or summaries that are primarily **TIME100**, **“most influential companies”**, **Fortune “most admired”**–style honors (including leading `OpenTable:` lines tied to *Time* / *Fortune*-style honor language) are rejected when the text lacks clear **restaurant ordering / integration / QR / POS / API / launch / funding / M&A** signals, so consumer “influence” lists cannot pass on brand name alone.
+
 8. **Cross-run deduplication** — Checks the Google Sheet master database:
    - Exact URL match → skip
    - Title similarity > 85% (fuzzy) → skip

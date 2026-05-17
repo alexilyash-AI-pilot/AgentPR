@@ -432,6 +432,96 @@ def _passes_aggregate_reservation_ranking_title_gate(article: dict) -> bool:
     return _aggregate_reservation_ranking_title_gate_salvaged(article)
 
 
+# ---------------------------------------------------------------------------
+# Magazine / prestige listicles (TIME100, "most influential companies", …)
+# OpenTable (etc.) in the title satisfies _has_company_news_signal, but honors
+# like TIME100 do not hit _title_is_aggregate_reservation_ranking_roundup
+# (no "ranking" / venue-roundup shape). Reject unless copy shows real product
+# or ordering-infrastructure news.
+# ---------------------------------------------------------------------------
+
+_TITLE_PRESTIGE_LIST_MARKERS = re.compile(
+    r"(?:"
+    r"time\s*100\b|"
+    r"most\s+influential\s+companies|"
+    r"world'?s\s+most\s+influential\b|"
+    r"fortune'?s?\s+most\s+admired|"
+    r"most\s+admired\s+companies\b"
+    r")",
+    re.I,
+)
+
+_LEADING_RESERVATION_BRAND_COLON = re.compile(
+    r"^(?:open\s*table|opentable|thefork|the\s+fork|quandoo|zenchef)\s*:",
+    re.I,
+)
+
+# When the headline leads with "OpenTable: …", treat magazine-style honor cues
+# as consumer prestige coverage unless salvage terms appear.
+_HONOR_JOURNALISM_MARKERS = re.compile(
+    r"(?:time\s+magazine|most\s+influential|fortune'?s?\s+most\s+admired|forbes\s+most)",
+    re.I,
+)
+
+# Ordering / integration signals strong enough to keep real product news that
+# also mentions TIME100 etc. (excludes generic "restaurant reservation" phrasing
+# often used in honor pieces).
+_PRESTIGE_ORDERING_OR_PRODUCT_SALVAGE_PHRASES = [
+    "qr ordering", "qr order", "qr code ordering",
+    "table ordering", "restaurant digital ordering", "digital ordering",
+    "online ordering", "first-party ordering", "first party ordering",
+    "direct ordering", "ordering orchestration", "ordering integration",
+    "order ahead", "menu integration", "menu integrations",
+    "menu synchronization", "menu sync", "restaurant middleware",
+    "omnichannel ordering", "restaurant commerce infrastructure",
+    "pos integration", "point-of-sale integration", "point of sale integration",
+    "integrates with", "integrated with", "guest ordering", "tableside ordering",
+    "voice ordering", "ai ordering", "delivery integration", "delivery integrations",
+    "restaurant operational ai", "ordering platform", "commerce platform",
+]
+
+_PRESTIGE_BIZ_SALVAGE_PHRASES = [
+    "funding", "raises", "raised", "investment", "series a", "series b", "series c",
+    "seed round", "acquisition", "acquires", "acquired", "merger", "ipo",
+    "launch", "launches", "launched", "unveils", "rolls out",
+    "partnership", "partners with", "strategic partnership",
+]
+
+
+def _has_prestige_list_salvage(combined_lower: str) -> bool:
+    if any(p in combined_lower for p in _PRESTIGE_ORDERING_OR_PRODUCT_SALVAGE_PHRASES):
+        return True
+    if any(p in combined_lower for p in _PRESTIGE_BIZ_SALVAGE_PHRASES):
+        return True
+    if re.search(r"\bapi\b", combined_lower):
+        return True
+    if re.search(r"\bqr\b", combined_lower) and re.search(
+        r"\b(order|menu|pay)\w*\b", combined_lower
+    ):
+        return True
+    return False
+
+
+def _matches_prestige_or_magazine_honor_context(title: str, combined_lower: str) -> bool:
+    if _TITLE_PRESTIGE_LIST_MARKERS.search(combined_lower):
+        return True
+    if _LEADING_RESERVATION_BRAND_COLON.match(title.strip()) and _HONOR_JOURNALISM_MARKERS.search(
+        combined_lower
+    ):
+        return True
+    return False
+
+
+def _should_reject_prestige_consumer_hype(article: dict) -> bool:
+    title = article.get("title", "")
+    combined_lower = f"{title} {article.get('description', '')}".lower()
+    if not _matches_prestige_or_magazine_honor_context(title, combined_lower):
+        return False
+    if _has_prestige_list_salvage(combined_lower):
+        return False
+    return True
+
+
 _STRICT_RESTAURANT_NOISE_PATTERNS = [
     re.compile(r"\b(where to (?:dine|eat)|places to eat)\b", re.I),
     re.compile(r"\b(?:best|top|favo[u]?rite|highest-rated)\b.*\b(?:restaurants?|venues?|places|dining)\b", re.I),
@@ -665,6 +755,11 @@ def _is_strictly_relevant_company_news(article: dict) -> bool:
     # Reject "10 best spots according to OpenTable ranking" unless headline carries
     # product/corporate news (launches, M&A, partnership, funding, …).
     if not _passes_aggregate_reservation_ranking_title_gate(article):
+        return False
+    # TIME100 / "most influential companies" / leading `OpenTable:` honor pieces
+    # are not venue roundups and bypass the aggregate ranking gate unless we
+    # explicitly require ordering/product salvage terms.
+    if _should_reject_prestige_consumer_hype(article):
         return False
 
     return _has_company_news_signal(article, matched_companies)
