@@ -34,16 +34,18 @@ from sheets import (
 )
 from sources import (
     ALL_QUERIES,
+    CEE_FOCUS_COMPANY_QUERIES,
     CUTOFF_DATE,
     DELIVERY_ECOSYSTEM_COMPANIES,
     DOMAIN_COUNTRY_MAP,
     EU_SIGNALS,
+    GOOGLE_NEWS_EXTRA_REGION_EDITIONS,
+    KEYWORD_GROUPS,
     RSS_PATHS,
     TIER1_DOMAINS,
     TIER2_DOMAINS,
     TIER3_DOMAINS,
     US_ONLY_DOMAINS,
-    KEYWORD_GROUPS,
 )
 from telegram_bot import send_article, send_error, send_run_report
 
@@ -842,6 +844,7 @@ _COMPANY_KEYWORDS = {
     "UpMenu": ["upmenu"],
     "Restimo": ["restimo"],
     "Restaumatic": ["restaumatic"],
+    "Qerko": ["qerko", "qerko qr", "qerko ordering", "qerko payments"],
     "TheFork": ["thefork", "the fork restaurant"],
     "OpenTable": ["opentable"],
     "Quandoo": ["quandoo"],
@@ -1177,6 +1180,60 @@ def fetch_google_news_rss(queries: list[str]) -> list[dict]:
     return results
 
 
+def fetch_google_news_rss_regional(
+    queries: list[str],
+    *,
+    hl: str,
+    gl: str,
+    ceid: str,
+    edition_label: str = "",
+) -> list[dict]:
+    """
+    Regional Google News RSS (any language/script for that edition).
+
+    Covers Polish/Czech/Slovak press for brands like Restimo, Restaumatic, Qerko
+    that a GB-only RSS feed tends to miss.
+    """
+    results = []
+    label = edition_label or f"{hl}-{gl}"
+    base_tpl = (
+        f"https://news.google.com/rss/search?q={{query}}"
+        f"&hl={hl}&gl={gl}&ceid={ceid}"
+    )
+
+    for query in queries:
+        url = base_tpl.format(query=quote_plus(query))
+        try:
+            feed = feedparser.parse(url)
+            for entry in feed.entries:
+                article = _build_article(
+                    {
+                        "title": entry.get("title", ""),
+                        "link": entry.get("link", ""),
+                        "published": entry.get("published", ""),
+                        "author": entry.get("author", ""),
+                        "description": entry.get("summary", ""),
+                        "source": {"name": entry.get("source", {}).get("title", "")},
+                    },
+                    query=query,
+                )
+                if article["url"]:
+                    results.append(article)
+            logger.info(
+                "Google News RSS [%s] [%s]: %d entries", label, query, len(feed.entries)
+            )
+            time.sleep(0.3)
+        except Exception as exc:
+            logger.warning(
+                "Google News RSS [%s] failed for query '%s': %s",
+                label,
+                query,
+                exc,
+            )
+
+    return results
+
+
 def fetch_newsapi(queries: list[str], domains: list[str]) -> list[dict]:
     """Fetch from NewsAPI /v2/everything filtered by domain list."""
     api_key = os.environ.get("NEWSAPI_KEY", "")
@@ -1300,6 +1357,15 @@ def run():
     # Step 1: fetch all raw candidates
     raw: list[dict] = []
     raw += fetch_google_news_rss(ALL_QUERIES)
+    # PL / CZ / SK editions — catches local-language pieces for Restimo, Restaumatic, Qerko
+    for hl, gl, ceid in GOOGLE_NEWS_EXTRA_REGION_EDITIONS:
+        raw += fetch_google_news_rss_regional(
+            CEE_FOCUS_COMPANY_QUERIES,
+            hl=hl,
+            gl=gl,
+            ceid=ceid,
+            edition_label=f"{gl}/{hl}",
+        )
     raw += fetch_newsapi(ALL_QUERIES, TIER1_DOMAINS)
     raw += fetch_direct_rss(TIER2_DOMAINS + TIER3_DOMAINS)
     logger.info("Total raw candidates before filtering: %d", len(raw))

@@ -43,7 +43,7 @@ The system has two independent parts:
 
 ## Monitored Companies
 
-22 core companies are tracked (competitors, priority targets, and industry players):
+23 core companies are tracked (competitors, priority targets, and industry players):
 
 | # | Company |
 |---|---------|
@@ -54,21 +54,22 @@ The system has two independent parts:
 | 5 | UpMenu |
 | 6 | Restimo |
 | 7 | Restaumatic |
-| 8 | TheFork |
-| 9 | OpenTable |
-| 10 | Quandoo |
-| 11 | Tableo |
-| 12 | ResDiary |
-| 13 | Zenchef |
-| 14 | Eat App |
-| 15 | SevenRooms |
-| 16 | Otter |
-| 17 | TableQR |
-| 18 | MENU TIGER |
-| 19 | ChoiceQR |
-| 20 | Olo |
-| 21 | Lunchbox |
-| 22 | Owner.com |
+| 8 | Qerko |
+| 9 | TheFork |
+| 10 | OpenTable |
+| 11 | Quandoo |
+| 12 | Tableo |
+| 13 | ResDiary |
+| 14 | Zenchef |
+| 15 | Eat App |
+| 16 | SevenRooms |
+| 17 | Otter |
+| 18 | TableQR |
+| 19 | MENU TIGER |
+| 20 | ChoiceQR |
+| 21 | Olo |
+| 22 | Lunchbox |
+| 23 | Owner.com |
 
 Priority companies currently include Olo, Lunchbox, and Owner.com.
 
@@ -82,7 +83,8 @@ All company names, delivery ecosystem names, and associated keywords are defined
 
 Approximately 80 sources are queried each run:
 
-- **Google News RSS** — geo-targeted EU feeds per company
+- **Google News RSS** — geo-targeted EU feeds per company (**GB-focused** run for all keywords)
+- **Google News RSS (extra)** — **`CEE_FOCUS_COMPANY_QUERIES`** (Restimo / Restaumatic / Qerko and related spellings) is also fetched separately on **`PL`, `CZ`, and `SK`** regional editions (`hl`/`gl`/`ceid`) so **Polish, Czech, Slovak, and mixed-language articles** surface; there is **no English-only filtering** anywhere in `monitor.py` for ingest.
 - **~25 major media outlets** — TechCrunch, Bloomberg, Reuters, Forbes, and similar
 - **~15 startup/tech ecosystem portals** — tech.eu, sifted.eu, eu-startups.com, and similar
 - **Direct RSS from regional EU portals**

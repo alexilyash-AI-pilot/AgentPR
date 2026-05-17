@@ -12,6 +12,7 @@ COMPANIES = [
     "UpMenu",
     "Restimo",
     "Restaumatic",
+    "Qerko",
     "TheFork",
     "OpenTable",
     "Quandoo",
@@ -60,6 +61,8 @@ KEYWORD_GROUPS = {
         "UpMenu restaurant",
         "Restimo",
         "Restaumatic",
+        "Qerko restaurant",
+        "qerko restaurant ordering",
         "TheFork restaurant",
         "OpenTable restaurant",
         "Quandoo restaurant",
@@ -148,6 +151,28 @@ KEYWORD_GROUPS = {
 
 # Flat list of all queries (used by Google News RSS)
 ALL_QUERIES = [q for group in KEYWORD_GROUPS.values() for q in group]
+
+# Extra Google News regional editions — Restimo / Restaumatic / Qerko are strong in
+# Poland, Czechia, Slovakia; a single GB-edition feed misses much local-language press.
+CEE_FOCUS_COMPANY_QUERIES = [
+    "Restimo",
+    "Restaumatic",
+    "Qerko",
+    "Restimo restaurace",
+    "Restaumatic restaurace",
+    "Restimo Polska",
+    "Restimo Polsko",
+    "Restaumatic Polska",
+    "Restimo Česko",
+    "Restaumatic Česko",
+    "Qerko Česko",
+]
+# (hl, gl, ceid) — Google News RSS regional parameters (any script / language accepted).
+GOOGLE_NEWS_EXTRA_REGION_EDITIONS = [
+    ("pl", "PL", "PL:pl"),
+    ("cs", "CZ", "CZ:cs"),
+    ("sk", "SK", "SK:sk"),
+]
 
 # ---------------------------------------------------------------------------
 # Tier 1 — Major international media (primary sources)
@@ -371,7 +396,7 @@ EU_SIGNALS = {
     "brussels", "vienna", "zurich", "lisbon", "milan", "barcelona",
     # All tracked companies (always relevant by definition)
     "deliverect", "sunday.app", "sundayapp", "flipdish", "storekit",
-    "upmenu", "restimo", "restaumatic", "thefork", "opentable",
+    "upmenu", "restimo", "restaumatic", "qerko", "thefork", "opentable",
     "quandoo", "tableo", "resdiary", "zenchef", "eat app", "eatapp",
     "sevenrooms", "tryotter", "tableqr", "menutiger", "menu tiger",
     "choiceqr", "choice restaurant", "choice crm", "choice.app",
