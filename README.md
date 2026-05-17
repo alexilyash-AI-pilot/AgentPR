@@ -112,6 +112,8 @@ Articles pass through a strict relevance policy before being saved:
 
 7. **Consumer restaurant noise rejection** — Restaurant openings, food-writer recommendations, dining guides, food weeks, local venue lists, menu announcements, set/seasonal/tasting/holiday menus, restaurant-week deals, Super Bowl deals, open-hours stories, best/top restaurant lists, Michelin guides, restaurant reviews, hotel/spa/Disney/venue reopenings, and chef/venue-specific stories are rejected even when they contain broad restaurant keywords. Confirmed rejected examples include "White Tiger" restaurant openings, "Indian regional flavours", "Liverpool food and drink writer", "favourite venues", "new city centre restaurant", "mum's cooking", "Mile High Asian Food Week", "where to dine", and "food week".
 
+    **Venue ranking listicles citing reservation brands:** Headlines framed as journalist/must-eat/restaurant roundup using **OpenTable**, **TheFork**, or **Reserve with Google** *only as the ranking/source* (especially `according to … opentable` / `according to … thefork` paired with roundup language or consumer ranking cues) are rejected so they cannot pass purely because the brand name appears in the title. Headlines containing clear product/corporate news wording (launch, acquisition, partnership, funding, announces, integrates, …) still pass via the usual business-signal salvage.
+
 8. **Cross-run deduplication** — Checks the Google Sheet master database:
    - Exact URL match → skip
    - Title similarity > 85% (fuzzy) → skip

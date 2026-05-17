@@ -349,6 +349,89 @@ _STRICT_RESTAURANT_NOISE_PHRASES = [
     "disney reopening",
 ]
 
+# ---------------------------------------------------------------------------
+# Aggregate venue listicles that cite reservation brands only as a ranking source.
+# Brand-in-title wrongly satisfies _has_company_news_signal unless we gate here.
+# Salvage genuine company/product news via _BUSINESS_SIGNALS (see
+# _passes_aggregate_reservation_ranking_title_gate).
+# ---------------------------------------------------------------------------
+
+_RESERVATION_RANKING_ROUNDUP_BRAND = re.compile(
+    r"\b(?:open\s*table|opentable|thefork|the\s+fork|reserve\s+with\s+google)\b",
+    re.I,
+)
+# "according to … open table|opentable|thefork|reserve with google"
+_ACCORDING_TO_RESERVATION_BRAND = re.compile(
+    r"\baccording\s+to\b[\s\S]{0,200}?\b(?:open\s*table|opentable|thefork|"
+    r"the\s+fork|reserve\s+with\s+google)\b",
+    re.I,
+)
+_TITLE_AGGREGATE_LISTICLE_MARKERS = re.compile(
+    r"(?:"
+    r"must[-\s]?try|must\s+try|"
+    r"\bbest\b\s+.{0,60}\brestaurants?\b|\btop\b\s+.{0,60}\brestaurants?\b|"
+    r"things\s+to\s+eat|"
+    r"(?:food|restaurant|dining)\s+guide|rated\s+dining\b|\bguide\b|"
+    r"\b(?:restaurants?|(?:places|spots)\s+to\s+eat)\s+(?:to\s+)?try\b|"
+    r"restaurants?\s+.{0,60}\bto\s+try\b"
+    r")",
+    re.I,
+)
+_TITLE_RANKING_WORD = re.compile(r"\branking\b|\brankings\b", re.I)
+# Venue-listicle roundup hints excluding bare "ranking" (handled with brand + wording)
+_AGGREGATE_VENUE_ROUNDUP_HINT = re.compile(
+    r"(?:"
+    r"^\s*\d+\s|^\s*\d+[.,:\s]+\s+|"
+    r"\b\d+\s+(?:great|essential|cool|cheap|fancy|budget)\b|"  # numbered lists
+    r"must[-\s]?try|must\s+try|"
+    r"\bbest\b\s+.{0,60}\brestaurants?\b|\btop\b\s+.{0,60}\brestaurants?\b|"
+    r"\bfavorite\b\s+.{0,60}\brestaurants?\b|\bfavourite\b\s+.{0,60}\brestaurants?\b|"
+    r"\bspots?\s+to\s+(?:visit|eat|try)\b|\bplaces\s+to\s+(?:visit|eat|try)\b|"
+    r"things\s+to\s+eat"
+    r")",
+    re.I | re.M,
+)
+
+
+def _title_is_aggregate_reservation_ranking_roundup(title: str) -> bool:
+    """
+    Venue roundups powered by OT/TheFork/RwG rankings (journalist cites the brand
+    as data source only). Title-only; combine with salvage for real company news.
+    """
+    if not title or not _RESERVATION_RANKING_ROUNDUP_BRAND.search(title):
+        return False
+    tl = title.lower()
+    attrib = bool(_ACCORDING_TO_RESERVATION_BRAND.search(tl))
+    venue_listicle_mark = bool(_TITLE_AGGREGATE_LISTICLE_MARKERS.search(tl))
+    ranking_word = bool(_TITLE_RANKING_WORD.search(tl))
+    roundup_hint = bool(_AGGREGATE_VENUE_ROUNDUP_HINT.search(tl))
+
+    # Primary: "... according to … [brand]" plus venue-listicle wording
+    # and/or ranking + consumer roundup cues (not attribution-only industry stats).
+    if attrib and (
+        venue_listicle_mark or (ranking_word and roundup_hint)
+    ):
+        return True
+    # Standalone venue story: brand + ranking + clear consumer roundup (not corp analysis)
+    if ranking_word and roundup_hint:
+        return True
+    return False
+
+
+def _aggregate_reservation_ranking_title_gate_salvaged(article: dict) -> bool:
+    """True when roundup title patterns apply but headline has real biz/product news."""
+    title = article.get("title", "").lower()
+    description = article.get("description", "").lower()
+    combined = f"{title} {description}"
+    return any(sig in combined for sig in _BUSINESS_SIGNALS)
+
+
+def _passes_aggregate_reservation_ranking_title_gate(article: dict) -> bool:
+    if not _title_is_aggregate_reservation_ranking_roundup(article.get("title", "")):
+        return True
+    return _aggregate_reservation_ranking_title_gate_salvaged(article)
+
+
 _STRICT_RESTAURANT_NOISE_PATTERNS = [
     re.compile(r"\b(where to (?:dine|eat)|places to eat)\b", re.I),
     re.compile(r"\b(?:best|top|favo[u]?rite|highest-rated)\b.*\b(?:restaurants?|venues?|places|dining)\b", re.I),
@@ -578,6 +661,10 @@ def _is_strictly_relevant_company_news(article: dict) -> bool:
     if _is_generic_tech_noise(article, matched_companies):
         return False
     if not _is_eu_relevant(article):
+        return False
+    # Reject "10 best spots according to OpenTable ranking" unless headline carries
+    # product/corporate news (launches, M&A, partnership, funding, …).
+    if not _passes_aggregate_reservation_ranking_title_gate(article):
         return False
 
     return _has_company_news_signal(article, matched_companies)
