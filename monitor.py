@@ -1354,13 +1354,13 @@ def _save_seen_urls_local(urls: set) -> None:
 def run():
     logger.info("=== AgentPR run started ===")
 
-    tg_token_set = bool(os.environ.get("TELEGRAM_BOT_TOKEN"))
-    tg_chat_set = bool(os.environ.get("TELEGRAM_CHAT_ID"))
+    tg_token_set = bool(os.environ.get("TELEGRAM_BOT_TOKEN", "").strip())
+    tg_chat_explicit = bool(os.environ.get("TELEGRAM_CHAT_ID", "").strip())
     tg_disabled = os.environ.get("TELEGRAM_DISABLED", "").lower() in ("1", "true", "yes")
     logger.info(
         "Telegram: TOKEN=%s CHAT_ID=%s DISABLED=%s GH_ACTIONS=%s",
         "set" if tg_token_set else "MISSING",
-        "set" if tg_chat_set else "MISSING",
+        "explicit secret" if tg_chat_explicit else "default group id",
         tg_disabled,
         os.environ.get("GITHUB_ACTIONS", ""),
     )
@@ -1486,12 +1486,10 @@ def run():
         )
 
     sent_count = 0
-    tg_ready = bool(os.environ.get("TELEGRAM_BOT_TOKEN")) and bool(
-        os.environ.get("TELEGRAM_CHAT_ID")
-    )
+    tg_ready = bool(os.environ.get("TELEGRAM_BOT_TOKEN", "").strip())
     if not tg_ready:
         logger.warning(
-            "Telegram not configured — skipping per-article sends (set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)."
+            "Telegram not configured — skipping per-article sends (set TELEGRAM_BOT_TOKEN secret)."
         )
     for article in send_batch:
         if not tg_ready:

@@ -31,10 +31,12 @@ jobs:
       - name: Syntax check
         run: python3 -m py_compile monitor.py telegram_bot.py sheets.py
 
+      # If TELEGRAM_CHAT_ID secret is missing, fall back to the production group ID
+      # documented in README (bot token remains required via secrets).
       - name: Run AgentPR monitor
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID != '' && secrets.TELEGRAM_CHAT_ID || '-1003524787352' }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
