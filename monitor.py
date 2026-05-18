@@ -1354,6 +1354,17 @@ def _save_seen_urls_local(urls: set) -> None:
 def run():
     logger.info("=== AgentPR run started ===")
 
+    tg_token_set = bool(os.environ.get("TELEGRAM_BOT_TOKEN"))
+    tg_chat_set = bool(os.environ.get("TELEGRAM_CHAT_ID"))
+    tg_disabled = os.environ.get("TELEGRAM_DISABLED", "").lower() in ("1", "true", "yes")
+    logger.info(
+        "Telegram: TOKEN=%s CHAT_ID=%s DISABLED=%s GH_ACTIONS=%s",
+        "set" if tg_token_set else "MISSING",
+        "set" if tg_chat_set else "MISSING",
+        tg_disabled,
+        os.environ.get("GITHUB_ACTIONS", ""),
+    )
+
     # Step 1: fetch all raw candidates
     raw: list[dict] = []
     raw += fetch_google_news_rss(ALL_QUERIES)

@@ -218,7 +218,21 @@ The same secrets above are required as environment variables on the Railway serv
 
 ### Schedule
 
-The daily monitor runs via `.github/workflows/monitor.yml` at **07:00 UTC (09:00 CET)** every day.
+The daily monitor runs via `.github/workflows/monitor.yml` at **07:00 UTC**:
+
+- Roughly **09:00 Warsaw** during **summer time (CEST, UTC+2)**
+- **08:00 Warsaw** during **winter time (CET, UTC+1)**
+
+GitHub can start cron jobs several minutes late (for example **09:06**), which is normal.
+
+### If Telegram is silent
+
+1. Open **GitHub → Actions → AgentPR Monitor** and check the latest run (**green ✓ vs red ✗**).
+2. Open the step **Run AgentPR monitor** and read the **first lines** of the log. You should see  
+   `Telegram: TOKEN=set CHAT_ID=set DISABLED=False`.  
+   - **`TOKEN=MISSING` or `CHAT_ID=MISSING`** → fix Actions secrets (**the workflow now fails the job** instead of succeeding silently with no Telegram).  
+   - **`DISABLED=True`** → unset `TELEGRAM_DISABLED` where the monitor runs, or accept no messages.
+3. If the step is **red** with `Telegram run report failed:` or HTTP errors, the bot may be blocked, the chat ID may have changed, or the token may be invalid — use that line from the log for the fix.
 
 ---
 

@@ -10,6 +10,10 @@ logger = logging.getLogger(__name__)
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 
 
+def _running_in_github_actions() -> bool:
+    return os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+
+
 def _telegram_disabled() -> bool:
     return os.environ.get("TELEGRAM_DISABLED", "").lower() in ("1", "true", "yes")
 
@@ -116,6 +120,13 @@ def send_run_report(
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
     if not token or not chat_id:
+        msg = (
+            "TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing — "
+            "cannot send the daily run report to Telegram."
+        )
+        logger.error(msg)
+        if _running_in_github_actions():
+            raise RuntimeError(msg)
         return
 
     sheet = _sheet_link_line()
@@ -148,7 +159,9 @@ def send_run_report(
         )
         resp.raise_for_status()
     except requests.RequestException as exc:
-        logger.warning("send_run_report failed: %s", exc)
+        logger.error("send_run_report failed: %s", exc)
+        if _running_in_github_actions():
+            raise RuntimeError(f"Telegram run report failed: {exc}") from exc
 
 
 def send_error(message: str) -> None:
